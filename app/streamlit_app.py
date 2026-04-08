@@ -20,6 +20,7 @@ from services.ingestion.docx_extractor import DOCXExtractor
 from services.ingestion.pdf_extractor import PDFExtractor
 from services.ingestion.pptx_extractor import PPTXExtractor
 from services.ingestion.xlsx_loader import XLSXLoader
+from services.sentiment_analyzer import analyze_sentiment
 
 
 SUPPORTED_FILE_TYPES = {
@@ -455,7 +456,6 @@ def initialize_state() -> None:
     st.session_state.setdefault("chat_messages", [])
     st.session_state.setdefault("theme_mode", "Light")
     st.session_state.setdefault("chat_scope", "All files")
-    st.session_state.setdefault("chat_question", "")
     st.session_state.setdefault(
         "editor_text",
         "Paste a draft here, then use CloudInsight actions to tighten tone, summarize, expand, or smooth grammar.",
@@ -661,7 +661,6 @@ def run_chat_query(question: str, scoped_results: list[dict[str, Any]], scope_la
         }
     )
     st.session_state.chat_messages.append(answer)
-    st.session_state.chat_question = ""
 
 
 def build_dataset_from_result(result: dict[str, Any]) -> pd.DataFrame:
@@ -838,6 +837,45 @@ def run_editor_action(action: str) -> None:
         st.session_state.editor_text = improve_grammar(current_text)
 
 
+def render_sentiment_panel(text: str) -> None:
+    """Render sentiment analysis for the current editor draft."""
+    sentiment = analyze_sentiment(text)
+
+    tone_left, tone_mid, tone_right = st.columns(3)
+    tone_left.metric("Sentiment", sentiment["label"])
+    tone_mid.metric("Polarity", f"{sentiment['polarity_score']:+.2f}")
+    tone_right.metric("Confidence", f"{sentiment['confidence']:.0%}")
+
+    st.caption(sentiment["guidance"])
+
+    cue_left, cue_right = st.columns(2, gap="large")
+    with cue_left:
+        st.markdown("**Positive cues**")
+        if sentiment["positive_hits"]:
+            st.markdown(
+                " ".join(
+                    f'<span class="mini-stat">{word} × {count}</span>'
+                    for word, count in sorted(sentiment["positive_hits"].items())
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("No strong positive cues detected yet.")
+
+    with cue_right:
+        st.markdown("**Negative cues**")
+        if sentiment["negative_hits"]:
+            st.markdown(
+                " ".join(
+                    f'<span class="mini-stat">{word} × {count}</span>'
+                    for word, count in sorted(sentiment["negative_hits"].items())
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("No strong negative cues detected yet.")
+
+
 def render_sidebar() -> list[Any]:
     """Render the control sidebar."""
     st.sidebar.markdown("## CloudInsight")
@@ -862,7 +900,6 @@ def render_sidebar() -> list[Any]:
     if st.sidebar.button("Clear Workspace", use_container_width=True):
         st.session_state.analyses = []
         st.session_state.chat_messages = []
-        st.session_state.chat_question = ""
         st.rerun()
     return st.sidebar.file_uploader(
         "Upload files",
@@ -1245,15 +1282,15 @@ def render_chat_tab(results: list[dict[str, Any]]) -> None:
                             st.markdown(f"**{match['file_name']} · {match['section_id']}**")
                             st.write(match["text"][:280])
 
-        ask_left, ask_right = st.columns((1, 0.22), gap="small")
-        with ask_left:
-            question = st.text_input(
-                "Ask about the uploaded materials",
-                key="chat_question",
-                placeholder="What are the main themes across the uploaded files?",
-            )
-        with ask_right:
-            submit = st.button("Ask", use_container_width=True)
+        with st.form("chat_query_form", clear_on_submit=True):
+            ask_left, ask_right = st.columns((1, 0.22), gap="small")
+            with ask_left:
+                question = st.text_input(
+                    "Ask about the uploaded materials",
+                    placeholder="What are the main themes across the uploaded files?",
+                )
+            with ask_right:
+                submit = st.form_submit_button("Ask", use_container_width=True)
 
         if chosen_prompt:
             run_chat_query(chosen_prompt, scoped_results, selected_scope)
@@ -1283,6 +1320,14 @@ def render_editor_tab() -> None:
             height=360,
             label_visibility="collapsed",
         )
+
+        with st.container(border=True):
+            section_header(
+                "Tone Analysis",
+                "How the draft currently reads",
+                "This sentiment pass is a lightweight editorial signal to help you check whether the draft feels positive, neutral, or negative.",
+            )
+            render_sentiment_panel(st.session_state.editor_text)
 
         action_columns = st.columns(4)
         actions = ["Rewrite", "Summarize", "Expand", "Improve Grammar"]
