@@ -42,5 +42,11 @@ with mlflow.start_run():
     # Log the model
     mlflow.xgboost.log_model(model, artifact_path="xgboost_model")
 
+    # Save as pickle file
+    import pickle
+    with open("model.pkl", "wb") as f:
+        pickle.dump(model, f)
+
     print(f"Accuracy: {acc}")
     print("Model logged to MLflow!")
+    print("Model saved to model.pkl!")
