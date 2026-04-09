@@ -1,150 +1,123 @@
-"""PPTX ingestion utilities for CloudInsight v2."""
+"""PPTX ingestion service for CloudInsight."""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
-try:
-    from pptx import Presentation
-except ImportError:  # pragma: no cover - handled at runtime
-    Presentation = None  # type: ignore[assignment]
+from services.ingestion.common import (
+    IngestionValidationError,
+    build_error_result,
+    build_success_result,
+    clean_text,
+    count_words,
+    join_text_fragments,
+    validate_file,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class PPTXExtractor:
-    """Extract slide-wise structured content from presentation files."""
-
-    SUPPORTED_SUFFIXES = {".pptx"}
-
-    def __init__(self, *, max_slides: int | None = None, max_chars_per_slide: int | None = 20000) -> None:
-        self.max_slides = max_slides
-        self.max_chars_per_slide = max_chars_per_slide
+    """Extract slide-wise text from PowerPoint presentations."""
 
     def extract(self, file_path: str | Path) -> dict[str, Any]:
-        """Extract PPTX content and return a standardized payload."""
-        path = Path(file_path).expanduser()
-        detected_type = self._detect_file_type(path)
+        """Extract presentation text grouped by slide."""
+        try:
+            path = validate_file(file_path, {".pptx"})
+        except IngestionValidationError as exc:
+            return build_error_result(file_path, "pptx", errors=[str(exc)])
 
         try:
-            self._validate(path, detected_type)
-            self._ensure_dependency()
+            from pptx import Presentation
+        except ImportError:
+            return build_error_result(
+                path,
+                "pptx",
+                errors=["Missing dependency 'python-pptx'. Install it before ingesting PPTX files."],
+            )
 
+        try:
             presentation = Presentation(str(path))
-            total_slides = len(presentation.slides)
-            slide_limit = total_slides if self.max_slides is None else min(total_slides, self.max_slides)
-
             sections: list[dict[str, Any]] = []
-            warnings: list[str] = []
-            overview_parts: list[str] = []
+            empty_slide_count = 0
 
-            for slide_index in range(slide_limit):
-                slide = presentation.slides[slide_index]
-                slide_text_fragments: list[str] = []
+            for slide_number, slide in enumerate(presentation.slides, start=1):
+                fragments = self._extract_slide_fragments(slide)
+                slide_text = join_text_fragments(fragments)
+                title = clean_text(slide.shapes.title.text) if getattr(slide.shapes, "title", None) else ""
 
-                for shape in slide.shapes:
-                    if getattr(shape, "has_text_frame", False):
-                        for paragraph in shape.text_frame.paragraphs:
-                            text = " ".join(run.text.strip() for run in paragraph.runs if run.text.strip())
-                            if not text:
-                                text = " ".join(paragraph.text.split())
-                            if text:
-                                slide_text_fragments.append(text)
-
-                slide_text = "\n".join(slide_text_fragments).strip()
-                if self.max_chars_per_slide and len(slide_text) > self.max_chars_per_slide:
-                    slide_text = slide_text[: self.max_chars_per_slide].rstrip()
-                    warnings.append(
-                        f"Slide {slide_index} exceeded {self.max_chars_per_slide} characters and was truncated."
-                    )
+                if not slide_text:
+                    empty_slide_count += 1
+                    continue
 
                 sections.append(
                     {
-                        "id": f"slide_{slide_index + 1}",
+                        "id": f"slide_{slide_number}",
                         "type": "slide",
-                        "slide_number": slide_index + 1,
-                        "title": self._extract_title(slide),
+                        "slide_number": slide_number,
+                        "title": title,
                         "text": slide_text,
                         "char_count": len(slide_text),
+                        "word_count": count_words(slide_text),
                     }
                 )
-                if slide_text:
-                    overview_parts.append(f"Slide {slide_index + 1}: {slide_text}")
 
-            if total_slides > slide_limit:
-                warnings.append(
-                    f"Processed {slide_limit} of {total_slides} slides. Increase max_slides to ingest the full presentation."
-                )
+            warnings = []
+            if empty_slide_count:
+                warnings.append(f"{empty_slide_count} slide(s) contained no extractable text.")
 
             metadata = {
-                "file_size_bytes": path.stat().st_size,
-                "slide_count": total_slides,
-                "slides_processed": slide_limit,
-                "truncated": total_slides > slide_limit or bool(warnings),
+                "slide_count": len(presentation.slides),
+                "extracted_slide_count": len(sections),
+                "empty_slide_count": empty_slide_count,
             }
-            content = {
-                "text": "\n\n".join(overview_parts),
-                "sections": sections,
-                "tables": [],
-            }
-            return self._success_response(path, detected_type, metadata, content, warnings)
-        except Exception as exc:  # pragma: no cover - exercised through integration
-            return self._error_response(path, detected_type, exc)
+            full_text = join_text_fragments(section["text"] for section in sections)
 
-    def _extract_title(self, slide: Any) -> str:
-        if getattr(slide.shapes, "title", None) is not None:
-            title_text = getattr(slide.shapes.title, "text", "") or ""
-            return " ".join(title_text.split())
-        return ""
+            logger.info("Extracted PPTX content from %s", path)
+            return build_success_result(
+                path,
+                "pptx",
+                metadata=metadata,
+                text=full_text,
+                sections=sections,
+                warnings=warnings,
+            )
+        except Exception as exc:
+            logger.exception("PPTX extraction failed for %s", path)
+            return build_error_result(path, "pptx", errors=[f"PPTX extraction failed: {exc}"])
 
-    def _detect_file_type(self, path: Path) -> str:
-        return path.suffix.lower().lstrip(".") or "unknown"
+    def _extract_slide_fragments(self, slide: Any) -> list[str]:
+        """Collect text fragments from all supported shapes within a slide."""
+        fragments: list[str] = []
+        for shape in slide.shapes:
+            fragments.extend(self._extract_shape_fragments(shape))
+        return fragments
 
-    def _validate(self, path: Path, detected_type: str) -> None:
-        if not path.exists():
-            raise FileNotFoundError(f"PPTX file not found: {path}")
-        if not path.is_file():
-            raise ValueError(f"Expected a file path, received: {path}")
-        if path.suffix.lower() not in self.SUPPORTED_SUFFIXES:
-            raise ValueError(f"Unsupported file type for PPTX extractor: {detected_type}")
+    def _extract_shape_fragments(self, shape: Any) -> list[str]:
+        """Recursively collect text from text, table, and grouped shapes."""
+        fragments: list[str] = []
 
-    def _ensure_dependency(self) -> None:
-        if Presentation is None:
-            raise ImportError("PPTX extraction requires 'python-pptx' to be installed.")
+        if hasattr(shape, "shapes"):
+            for child in shape.shapes:
+                fragments.extend(self._extract_shape_fragments(child))
 
-    def _success_response(
-        self,
-        path: Path,
-        detected_type: str,
-        metadata: dict[str, Any],
-        content: dict[str, Any],
-        warnings: list[str],
-    ) -> dict[str, Any]:
-        return {
-            "status": "success",
-            "file_name": path.name,
-            "file_path": str(path.resolve()),
-            "file_type": "pptx",
-            "detected_type": detected_type,
-            "metadata": metadata,
-            "content": content,
-            "warnings": warnings,
-            "errors": [],
-        }
+        if getattr(shape, "has_text_frame", False):
+            text = clean_text(shape.text or "")
+            if text:
+                fragments.append(text)
 
-    def _error_response(self, path: Path, detected_type: str, exc: Exception) -> dict[str, Any]:
-        return {
-            "status": "error",
-            "file_name": path.name,
-            "file_path": str(path.resolve()),
-            "file_type": "pptx",
-            "detected_type": detected_type,
-            "metadata": {},
-            "content": {"text": "", "sections": [], "tables": []},
-            "warnings": [],
-            "errors": [str(exc)],
-        }
+        if getattr(shape, "has_table", False):
+            for row in shape.table.rows:
+                row_text = " | ".join(clean_text(cell.text) for cell in row.cells if clean_text(cell.text))
+                if row_text:
+                    fragments.append(row_text)
+
+        return fragments
 
 
-def extract_pptx(file_path: str | Path, **kwargs: Any) -> dict[str, Any]:
+def extract_pptx(file_path: str | Path, **_: Any) -> dict[str, Any]:
     """Convenience wrapper for PPTX extraction."""
-    return PPTXExtractor(**kwargs).extract(file_path)
+    return PPTXExtractor().extract(file_path)

@@ -1,136 +1,110 @@
-"""PDF ingestion utilities for CloudInsight v2."""
+"""PDF ingestion service for CloudInsight."""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
-try:
-    from pypdf import PdfReader
-except ImportError:  # pragma: no cover - optional dependency fallback
-    try:
-        from PyPDF2 import PdfReader  # type: ignore[assignment]
-    except ImportError:  # pragma: no cover - handled at runtime
-        PdfReader = None  # type: ignore[assignment]
+from services.ingestion.common import (
+    IngestionValidationError,
+    build_error_result,
+    build_success_result,
+    clean_text,
+    count_words,
+    join_text_fragments,
+    validate_file,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class PDFExtractor:
-    """Extract structured text content from PDF documents."""
+    """Extract structured page-wise content from PDF documents."""
 
-    SUPPORTED_SUFFIXES = {".pdf"}
-
-    def __init__(self, *, max_pages: int | None = None, max_chars_per_page: int | None = 20000) -> None:
-        self.max_pages = max_pages
-        self.max_chars_per_page = max_chars_per_page
+    def __init__(self, include_empty_pages: bool = False) -> None:
+        self.include_empty_pages = include_empty_pages
 
     def extract(self, file_path: str | Path) -> dict[str, Any]:
-        """Extract PDF content and return a standardized payload."""
-        path = Path(file_path).expanduser()
-        detected_type = self._detect_file_type(path)
+        """Extract text and metadata from a PDF file."""
+        try:
+            path = validate_file(file_path, {".pdf"})
+        except IngestionValidationError as exc:
+            return build_error_result(file_path, "pdf", errors=[str(exc)])
 
         try:
-            self._validate(path, detected_type)
-            self._ensure_dependency()
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                from PyPDF2 import PdfReader
+        except ImportError:
+            return build_error_result(
+                path,
+                "pdf",
+                errors=["Missing dependency 'pypdf' or 'PyPDF2'. Install one before ingesting PDF files."],
+            )
 
+        try:
             reader = PdfReader(str(path))
-            total_pages = len(reader.pages)
-            page_limit = total_pages if self.max_pages is None else min(total_pages, self.max_pages)
-
             sections: list[dict[str, Any]] = []
-            text_parts: list[str] = []
             warnings: list[str] = []
+            empty_page_count = 0
 
-            for page_index in range(page_limit):
-                extracted = reader.pages[page_index].extract_text() or ""
-                normalized_text = " ".join(extracted.split())
-
-                if self.max_chars_per_page and len(normalized_text) > self.max_chars_per_page:
-                    normalized_text = normalized_text[: self.max_chars_per_page].rstrip()
-                    warnings.append(
-                        f"Page {page_index + 1} exceeded {self.max_chars_per_page} characters and was truncated."
-                    )
+            for page_number, page in enumerate(reader.pages, start=1):
+                page_text = clean_text(page.extract_text() or "")
+                if not page_text:
+                    empty_page_count += 1
+                    if self.include_empty_pages:
+                        sections.append(
+                            {
+                                "id": f"page_{page_number}",
+                                "type": "page",
+                                "page_number": page_number,
+                                "text": "",
+                                "char_count": 0,
+                                "word_count": 0,
+                            }
+                        )
+                    continue
 
                 sections.append(
                     {
-                        "id": f"page_{page_index + 1}",
+                        "id": f"page_{page_number}",
                         "type": "page",
-                        "page_number": page_index + 1,
-                        "text": normalized_text,
-                        "char_count": len(normalized_text),
+                        "page_number": page_number,
+                        "text": page_text,
+                        "char_count": len(page_text),
+                        "word_count": count_words(page_text),
                     }
                 )
-                if normalized_text:
-                    text_parts.append(normalized_text)
 
-            if total_pages > page_limit:
+            if empty_page_count:
                 warnings.append(
-                    f"Processed {page_limit} of {total_pages} pages. Increase max_pages to ingest the full document."
+                    f"{empty_page_count} page(s) had no extractable text. This can happen with scanned PDFs."
                 )
 
             metadata = {
-                "file_size_bytes": path.stat().st_size,
-                "page_count": total_pages,
-                "pages_processed": page_limit,
-                "truncated": total_pages > page_limit or bool(warnings),
+                "page_count": len(reader.pages),
+                "extracted_page_count": sum(1 for section in sections if section["text"]),
+                "empty_page_count": empty_page_count,
             }
-            content = {
-                "text": "\n\n".join(text_parts),
-                "sections": sections,
-                "tables": [],
-            }
-            return self._success_response(path, detected_type, metadata, content, warnings)
-        except Exception as exc:  # pragma: no cover - exercised through integration
-            return self._error_response(path, detected_type, exc)
+            full_text = join_text_fragments(section["text"] for section in sections)
 
-    def _detect_file_type(self, path: Path) -> str:
-        return path.suffix.lower().lstrip(".") or "unknown"
-
-    def _validate(self, path: Path, detected_type: str) -> None:
-        if not path.exists():
-            raise FileNotFoundError(f"PDF file not found: {path}")
-        if not path.is_file():
-            raise ValueError(f"Expected a file path, received: {path}")
-        if path.suffix.lower() not in self.SUPPORTED_SUFFIXES:
-            raise ValueError(f"Unsupported file type for PDF extractor: {detected_type}")
-
-    def _ensure_dependency(self) -> None:
-        if PdfReader is None:
-            raise ImportError("PDF extraction requires 'pypdf' or 'PyPDF2' to be installed.")
-
-    def _success_response(
-        self,
-        path: Path,
-        detected_type: str,
-        metadata: dict[str, Any],
-        content: dict[str, Any],
-        warnings: list[str],
-    ) -> dict[str, Any]:
-        return {
-            "status": "success",
-            "file_name": path.name,
-            "file_path": str(path.resolve()),
-            "file_type": "pdf",
-            "detected_type": detected_type,
-            "metadata": metadata,
-            "content": content,
-            "warnings": warnings,
-            "errors": [],
-        }
-
-    def _error_response(self, path: Path, detected_type: str, exc: Exception) -> dict[str, Any]:
-        return {
-            "status": "error",
-            "file_name": path.name,
-            "file_path": str(path.resolve()),
-            "file_type": "pdf",
-            "detected_type": detected_type,
-            "metadata": {},
-            "content": {"text": "", "sections": [], "tables": []},
-            "warnings": [],
-            "errors": [str(exc)],
-        }
+            logger.info("Extracted PDF content from %s", path)
+            return build_success_result(
+                path,
+                "pdf",
+                metadata=metadata,
+                text=full_text,
+                sections=sections,
+                warnings=warnings,
+            )
+        except Exception as exc:
+            logger.exception("PDF extraction failed for %s", path)
+            return build_error_result(path, "pdf", errors=[f"PDF extraction failed: {exc}"])
 
 
-def extract_pdf(file_path: str | Path, **kwargs: Any) -> dict[str, Any]:
+def extract_pdf(file_path: str | Path, **_: Any) -> dict[str, Any]:
     """Convenience wrapper for PDF extraction."""
-    return PDFExtractor(**kwargs).extract(file_path)
+    return PDFExtractor().extract(file_path)

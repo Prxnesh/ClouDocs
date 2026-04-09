@@ -15,11 +15,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from services.audio.tts_engine import TTSEngine
 from services.ingestion.csv_loader import CSVLoader
 from services.ingestion.docx_extractor import DOCXExtractor
 from services.ingestion.pdf_extractor import PDFExtractor
 from services.ingestion.pptx_extractor import PPTXExtractor
 from services.ingestion.xlsx_loader import XLSXLoader
+from services.llm.chat_engine import ChatEngine
 from services.sentiment_analyzer import analyze_sentiment
 
 
@@ -38,6 +40,66 @@ CHAT_PROMPTS = [
     ("Key Themes", "What are the key metrics or themes?"),
     ("What Matters", "What stands out as unusual or important?"),
 ]
+RETRIEVAL_STOP_WORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "this",
+    "that",
+    "from",
+    "into",
+    "about",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "whose",
+    "there",
+    "their",
+    "they",
+    "them",
+    "then",
+    "than",
+    "your",
+    "have",
+    "has",
+    "had",
+    "were",
+    "been",
+    "does",
+    "did",
+    "just",
+    "like",
+    "show",
+    "tell",
+    "give",
+    "file",
+    "files",
+    "document",
+    "documents",
+    "page",
+    "pages",
+    "table",
+    "tables",
+    "section",
+    "sections",
+}
+SUMMARY_STYLE_PHRASES = (
+    "summarize",
+    "summary",
+    "overview",
+    "what is this about",
+    "what's this about",
+    "what happened",
+    "main point",
+    "key theme",
+    "key themes",
+    "high level",
+    "tl dr",
+    "tldr",
+)
 
 
 def configure_page() -> None:
@@ -51,42 +113,35 @@ def configure_page() -> None:
 
 
 def apply_theme(theme_mode: str) -> None:
-    """Inject theme-aware styling and interaction polish."""
+    """Inject a consistent light and dark theme."""
     is_dark = theme_mode == "Dark"
     palette = {
-        "ink": "#eef4ff" if is_dark else "#16263a",
-        "muted": "#a7b8cd" if is_dark else "#5f738a",
-        "paper": "rgba(15, 23, 36, 0.84)" if is_dark else "rgba(255, 250, 242, 0.92)",
-        "paper_soft": "rgba(21, 31, 48, 0.72)" if is_dark else "rgba(255, 255, 255, 0.68)",
-        "line": "rgba(167, 184, 205, 0.16)" if is_dark else "rgba(22, 38, 58, 0.10)",
-        "line_strong": "rgba(167, 184, 205, 0.28)" if is_dark else "rgba(22, 38, 58, 0.18)",
-        "teal": "#57d4c6" if is_dark else "#187d76",
-        "gold": "#ffc76a" if is_dark else "#ffb347",
-        "coral": "#ff8f75" if is_dark else "#d86a4a",
-        "sidebar_text": "#eef4fb" if is_dark else "#10253c",
-        "sidebar_bg": "linear-gradient(180deg, rgba(9, 16, 28, 0.99), rgba(10, 62, 77, 0.98))"
-        if is_dark
-        else "linear-gradient(180deg, rgba(250, 244, 234, 0.98), rgba(244, 235, 222, 0.98))",
-        "app_bg": (
-            "radial-gradient(circle at top left, rgba(87, 212, 198, 0.14), transparent 24%),"
-            "radial-gradient(circle at top right, rgba(255, 199, 106, 0.12), transparent 22%),"
-            "linear-gradient(180deg, #0b1420 0%, #101c2b 100%)"
-        )
-        if is_dark
-        else (
-            "radial-gradient(circle at top left, rgba(255, 179, 71, 0.18), transparent 26%),"
-            "radial-gradient(circle at top right, rgba(24, 125, 118, 0.16), transparent 24%),"
-            "linear-gradient(180deg, #fbf6ee 0%, #f3ede3 100%)"
-        ),
-        "shadow": "0 20px 50px rgba(0, 0, 0, 0.28)" if is_dark else "0 18px 50px rgba(22, 38, 58, 0.10)",
-        "hero_side": "rgba(9, 16, 28, 0.96)" if is_dark else "rgba(22, 38, 58, 0.96)",
-        "hero_side_text": "rgba(238, 244, 255, 0.82)" if is_dark else "rgba(255, 255, 255, 0.82)",
-        "tab_bg": "rgba(255, 255, 255, 0.04)" if is_dark else "rgba(22, 38, 58, 0.04)",
-        "tab_active": "linear-gradient(135deg, rgba(87, 212, 198, 0.22), rgba(255, 199, 106, 0.16))"
-        if is_dark
-        else "linear-gradient(135deg, rgba(24, 125, 118, 0.12), rgba(255, 179, 71, 0.12))",
-        "button_bg": "linear-gradient(135deg, #122033, #176d68)" if is_dark else "linear-gradient(135deg, #16263a, #187d76)",
-        "button_text": "#f7fbff",
+        "ink": "#ecf2ee" if is_dark else "#20251f",
+        "muted": "#9aac9f" if is_dark else "#667162",
+        "app_bg": "#0b1211" if is_dark else "#f2eadf",
+        "panel": "#14201f" if is_dark else "#fffaf3",
+        "panel_soft": "#1b2b29" if is_dark else "#f6ede2",
+        "panel_tint": "rgba(255,255,255,0.04)" if is_dark else "rgba(255,255,255,0.72)",
+        "line": "#2e4743" if is_dark else "#d8cdbd",
+        "line_strong": "#456660" if is_dark else "#bba992",
+        "accent": "#6fd0bd" if is_dark else "#0f6c5a",
+        "accent_warm": "#e9a270" if is_dark else "#ba7042",
+        "accent_soft": "#183735" if is_dark else "#e0f2ea",
+        "sidebar_bg": "#101918" if is_dark else "#18231f",
+        "sidebar_ink": "#f3f6f3" if is_dark else "#f7f2e9",
+        "tab_shell": "rgba(255,255,255,0.05)" if is_dark else "rgba(255,250,243,0.68)",
+        "tab_active": "rgba(111,208,189,0.16)" if is_dark else "rgba(15,108,90,0.10)",
+        "chip_bg": "rgba(255,255,255,0.08)" if is_dark else "rgba(255,255,255,0.82)",
+        "chip_ink": "#dff1eb" if is_dark else "#21453a",
+        "hero_side_bg": "linear-gradient(180deg, #13211f 0%, #0d1514 100%)" if is_dark else "linear-gradient(180deg, #1d2b27 0%, #13201c 100%)",
+        "hero_side_ink": "rgba(243, 239, 231, 0.82)",
+        "shadow": "0 18px 48px rgba(0, 0, 0, 0.34)" if is_dark else "0 18px 48px rgba(56, 41, 20, 0.10)",
+        "button_bg": "linear-gradient(135deg, #6fd0bd 0%, #4d83c3 100%)" if is_dark else "linear-gradient(135deg, #0f6c5a 0%, #165d8f 100%)",
+        "button_ink": "#0d1716" if is_dark else "#fbf6ef",
+        "chat_bg": "#1a2b29" if is_dark else "#fff8f0",
+        "audio_bg": "rgba(255,255,255,0.05)" if is_dark else "rgba(255,255,255,0.74)",
+        "hero_overlay": "rgba(111,208,189,0.14)" if is_dark else "rgba(15,108,90,0.12)",
+        "hero_overlay_warm": "rgba(233,162,112,0.14)" if is_dark else "rgba(186,112,66,0.12)",
     }
 
     st.markdown(
@@ -95,261 +150,349 @@ def apply_theme(theme_mode: str) -> None:
         :root {{
             --ink: {palette["ink"]};
             --muted: {palette["muted"]};
-            --paper: {palette["paper"]};
-            --paper-soft: {palette["paper_soft"]};
+            --app-bg: {palette["app_bg"]};
+            --panel: {palette["panel"]};
+            --panel-soft: {palette["panel_soft"]};
+            --panel-tint: {palette["panel_tint"]};
             --line: {palette["line"]};
             --line-strong: {palette["line_strong"]};
-            --teal: {palette["teal"]};
-            --gold: {palette["gold"]};
-            --coral: {palette["coral"]};
+            --accent: {palette["accent"]};
+            --accent-warm: {palette["accent_warm"]};
+            --accent-soft: {palette["accent_soft"]};
+            --sidebar-bg: {palette["sidebar_bg"]};
+            --sidebar-ink: {palette["sidebar_ink"]};
+            --tab-shell: {palette["tab_shell"]};
+            --tab-active: {palette["tab_active"]};
+            --chip-bg: {palette["chip_bg"]};
+            --chip-ink: {palette["chip_ink"]};
+            --hero-side-bg: {palette["hero_side_bg"]};
+            --hero-side-ink: {palette["hero_side_ink"]};
             --shadow: {palette["shadow"]};
             --button-bg: {palette["button_bg"]};
-            --button-text: {palette["button_text"]};
-            --tab-bg: {palette["tab_bg"]};
-            --tab-active: {palette["tab_active"]};
+            --button-ink: {palette["button_ink"]};
+            --chat-bg: {palette["chat_bg"]};
+            --audio-bg: {palette["audio_bg"]};
+            --hero-overlay: {palette["hero_overlay"]};
+            --hero-overlay-warm: {palette["hero_overlay_warm"]};
         }}
 
-        @keyframes riseIn {{
-            from {{ opacity: 0; transform: translateY(18px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
-
-        @keyframes shimmerPulse {{
-            0% {{ transform: translateX(-10px); opacity: 0.55; }}
-            50% {{ transform: translateX(10px); opacity: 1; }}
-            100% {{ transform: translateX(-10px); opacity: 0.55; }}
+        html, body, [class*="css"] {{
+            font-family: "Avenir Next", "Segoe UI", sans-serif;
         }}
 
         .stApp {{
-            background: {palette["app_bg"]};
+            background:
+                radial-gradient(circle at top left, var(--hero-overlay), transparent 24%),
+                radial-gradient(circle at top right, var(--hero-overlay-warm), transparent 22%),
+                linear-gradient(180deg, var(--app-bg) 0%, var(--panel-soft) 100%);
             color: var(--ink);
-            transition: background 0.35s ease, color 0.35s ease;
         }}
 
         .block-container {{
-            padding-top: 1.55rem;
+            padding-top: 1.35rem;
             padding-bottom: 3rem;
             max-width: 1320px;
         }}
 
         [data-testid="stSidebar"] {{
-            background: {palette["sidebar_bg"]};
-            border-right: 1px solid var(--line);
+            background: var(--sidebar-bg);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
         }}
 
         [data-testid="stSidebar"] * {{
-            color: {palette["sidebar_text"]} !important;
+            color: var(--sidebar-ink) !important;
+        }}
+
+        [data-testid="stSidebar"] .block-container {{
+            padding-top: 1.2rem;
+            padding-bottom: 2rem;
+        }}
+
+        .sidebar-shell {{
+            border-radius: 26px;
+            padding: 1.1rem 1rem;
+            margin-bottom: 1rem;
+            background:
+                radial-gradient(circle at top right, rgba(111, 208, 189, 0.22), transparent 32%),
+                linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+            border: 1px solid rgba(255, 255, 255, 0.09);
+        }}
+
+        .sidebar-brand {{
+            font-family: Georgia, "Iowan Old Style", serif;
+            font-size: 1.85rem;
+            line-height: 1;
+            letter-spacing: -0.03em;
+            margin: 0 0 0.35rem 0;
+        }}
+
+        .sidebar-note {{
+            color: rgba(247, 242, 233, 0.78);
+            font-size: 0.92rem;
+            line-height: 1.55;
+            margin: 0 0 0.85rem 0;
+        }}
+
+        .sidebar-badges {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+        }}
+
+        .sidebar-badge {{
+            display: inline-flex;
+            align-items: center;
+            padding: 0.35rem 0.6rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.10);
+            font-size: 0.76rem;
+            font-weight: 700;
         }}
 
         [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {{
-            background: {palette["paper_soft"]};
-            border: 1px dashed var(--line-strong);
-            transition: transform 0.2s ease, border-color 0.2s ease;
-        }}
-
-        [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]:hover {{
-            transform: translateY(-1px);
-            border-color: var(--teal);
+            background: rgba(255,255,255,0.04);
+            border: 1px dashed rgba(255,255,255,0.24);
+            border-radius: 20px;
+            padding: 1rem 0.8rem;
         }}
 
         [data-testid="stVerticalBlockBorderWrapper"] {{
-            background: var(--paper);
+            background: linear-gradient(180deg, var(--panel-tint), var(--panel));
             border: 1px solid var(--line) !important;
             border-radius: 24px;
             box-shadow: var(--shadow);
-            animation: riseIn 0.45s ease;
+        }}
+
+        [data-testid="stVerticalBlockBorderWrapper"] > div:first-child {{
+            border-radius: 24px;
         }}
 
         [data-testid="stMetric"] {{
-            background: var(--paper-soft);
+            background: var(--panel-soft);
             border: 1px solid var(--line);
             border-radius: 18px;
             padding: 0.8rem 0.9rem;
         }}
 
         [data-testid="stTabs"] [data-baseweb="tab-list"] {{
-            gap: 0.4rem;
-            background: transparent;
+            gap: 0.5rem;
+            background: var(--tab-shell);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 0.35rem;
         }}
 
         [data-testid="stTabs"] [data-baseweb="tab"] {{
-            background: var(--tab-bg);
-            border: 1px solid var(--line);
-            border-radius: 999px;
-            padding: 0.52rem 0.95rem;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 14px;
+            padding: 0.56rem 0.96rem;
             color: var(--ink);
-            transition: transform 0.18s ease, background 0.25s ease, border-color 0.25s ease;
+            font-weight: 700;
         }}
 
         [data-testid="stTabs"] [aria-selected="true"] {{
             background: var(--tab-active);
-            border-color: var(--teal);
-            transform: translateY(-1px);
+            border-color: var(--line-strong);
+            color: var(--ink);
         }}
 
         .stButton > button,
         [data-testid="stDownloadButton"] > button {{
             border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(15,108,90,0.12);
             background: var(--button-bg);
-            color: var(--button-text);
-            transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
-            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
-            font-weight: 700;
+            color: var(--button-ink);
+            box-shadow: 0 12px 24px rgba(15,108,90,0.18);
+            font-weight: 800;
+            min-height: 2.75rem;
         }}
 
         .stButton > button:hover,
         [data-testid="stDownloadButton"] > button:hover {{
-            transform: translateY(-1px);
-            filter: brightness(1.04);
-            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.16);
+            border-color: var(--line-strong);
         }}
 
         .stTextInput input,
         .stTextArea textarea,
         [data-baseweb="select"] > div {{
-            background: var(--paper-soft);
+            background: var(--panel-soft);
             color: var(--ink);
-            border-radius: 16px;
+            border-radius: 18px;
             border: 1px solid var(--line);
+        }}
+
+        .stTextArea textarea {{
+            line-height: 1.65;
         }}
 
         .hero-shell {{
             background:
-                linear-gradient(135deg, var(--paper), var(--paper-soft)),
-                linear-gradient(120deg, rgba(24, 125, 118, 0.10), rgba(255, 179, 71, 0.12));
+                radial-gradient(circle at top right, var(--hero-overlay), transparent 28%),
+                linear-gradient(135deg, var(--panel) 0%, var(--panel-soft) 100%);
             border: 1px solid var(--line);
             box-shadow: var(--shadow);
             border-radius: 30px;
-            padding: 2rem 2rem 1.6rem 2rem;
+            padding: 1.8rem 1.8rem 1.5rem 1.8rem;
             margin-bottom: 1rem;
             position: relative;
             overflow: hidden;
-            isolation: isolate;
-            animation: riseIn 0.45s ease;
         }}
 
-        .hero-shell:before {{
+        .hero-shell::after {{
             content: "";
             position: absolute;
-            inset: auto -60px -90px auto;
-            width: 240px;
-            height: 240px;
+            inset: auto -40px -48px auto;
+            width: 220px;
+            height: 220px;
             border-radius: 50%;
-            background: radial-gradient(circle, rgba(255, 179, 71, 0.28), transparent 62%);
-            z-index: -1;
-        }}
-
-        .hero-shell:after {{
-            content: "";
-            position: absolute;
-            inset: 0 auto auto 0;
-            width: 180px;
-            height: 3px;
-            background: linear-gradient(90deg, transparent, var(--teal), transparent);
-            animation: shimmerPulse 7s ease-in-out infinite;
+            background: radial-gradient(circle, var(--hero-overlay-warm), transparent 62%);
+            pointer-events: none;
         }}
 
         .eyebrow {{
-            color: var(--teal);
+            color: var(--accent-warm);
             text-transform: uppercase;
-            font-size: 0.78rem;
-            letter-spacing: 0.18em;
-            font-weight: 700;
-            margin-bottom: 0.7rem;
+            font-size: 0.76rem;
+            letter-spacing: 0.16em;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
         }}
 
         .hero-title {{
             color: var(--ink);
-            font-size: 3.15rem;
-            line-height: 1;
-            font-weight: 900;
-            margin: 0 0 0.6rem 0;
+            font-family: Georgia, "Iowan Old Style", serif;
+            font-size: 3.3rem;
+            line-height: 0.96;
+            letter-spacing: -0.05em;
+            font-weight: 700;
+            margin: 0 0 0.65rem 0;
         }}
 
         .hero-copy {{
             color: var(--muted);
             font-size: 1rem;
-            max-width: 44rem;
-            margin: 0 0 1rem 0;
+            max-width: 42rem;
+            line-height: 1.7;
+            margin: 0;
         }}
 
         .hero-steps {{
             display: flex;
             flex-wrap: wrap;
-            gap: 0.55rem;
+            gap: 0.6rem;
+            margin-top: 1.1rem;
         }}
 
         .hero-step {{
             border-radius: 999px;
-            padding: 0.48rem 0.8rem;
-            background: var(--paper-soft);
+            padding: 0.46rem 0.82rem;
+            background: var(--chip-bg);
             border: 1px solid var(--line);
-            color: var(--ink);
-            font-size: 0.9rem;
-            font-weight: 600;
-            transition: transform 0.18s ease, border-color 0.18s ease;
-        }}
-
-        .hero-step:hover {{
-            transform: translateY(-1px);
-            border-color: var(--teal);
+            color: var(--chip-ink);
+            font-size: 0.86rem;
+            font-weight: 700;
         }}
 
         .hero-sidecard {{
-            background: {palette["hero_side"]};
-            color: white;
-            border-radius: 24px;
-            padding: 1.2rem;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: var(--hero-side-bg);
+            color: #f3efe7;
+            border-radius: 28px;
+            padding: 1.3rem 1.2rem;
+            border: 1px solid rgba(255,255,255,0.08);
             min-height: 100%;
-            animation: riseIn 0.55s ease;
         }}
 
         .hero-sidecard h4 {{
-            margin: 0 0 0.55rem 0;
-            font-size: 1.02rem;
+            margin: 0 0 0.6rem 0;
+            font-size: 1rem;
             font-weight: 800;
         }}
 
         .hero-sidecard p {{
             margin: 0;
-            font-size: 0.93rem;
-            line-height: 1.5;
-            color: {palette["hero_side_text"]};
+            font-size: 0.94rem;
+            line-height: 1.62;
+            color: var(--hero-side-ink);
+        }}
+
+        .hero-side-list {{
+            margin: 0.95rem 0 0 0;
+            padding-left: 1rem;
+            color: var(--hero-side-ink);
+        }}
+
+        .hero-side-list li {{
+            margin-bottom: 0.45rem;
+        }}
+
+        .hero-side-meter {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.7rem;
+            margin-top: 1rem;
+        }}
+
+        .hero-meter-card {{
+            border-radius: 18px;
+            padding: 0.9rem;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+        }}
+
+        .hero-meter-label {{
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: rgba(243,239,231,0.56);
+            margin-bottom: 0.35rem;
+            font-weight: 800;
+        }}
+
+        .hero-meter-value {{
+            font-size: 1.55rem;
+            line-height: 1;
+            font-weight: 800;
         }}
 
         .kpi-card {{
-            background: var(--paper);
+            background: linear-gradient(180deg, var(--panel), var(--panel-soft));
             border: 1px solid var(--line);
             border-radius: 22px;
             box-shadow: var(--shadow);
-            padding: 1rem 1.05rem 0.95rem 1.05rem;
-            min-height: 128px;
-            transition: transform 0.18s ease, border-color 0.18s ease;
-            animation: riseIn 0.5s ease;
+            padding: 1rem 1.1rem;
+            min-height: 122px;
+            position: relative;
+            overflow: hidden;
         }}
 
-        .kpi-card:hover {{
-            transform: translateY(-2px);
-            border-color: var(--teal);
+        .kpi-card::before {{
+            content: "";
+            position: absolute;
+            inset: 0 auto auto 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-warm));
         }}
 
         .kpi-label {{
             color: var(--muted);
-            font-size: 0.82rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.12em;
             margin-bottom: 0.45rem;
-            font-weight: 700;
+            font-weight: 800;
         }}
 
         .kpi-value {{
             color: var(--ink);
-            font-size: 2.05rem;
-            line-height: 1;
-            font-weight: 900;
-            margin-bottom: 0.4rem;
+            font-family: Georgia, "Iowan Old Style", serif;
+            font-size: 2.2rem;
+            line-height: 0.95;
+            letter-spacing: -0.04em;
+            font-weight: 700;
+            margin-bottom: 0.36rem;
         }}
 
         .kpi-note,
@@ -361,19 +504,22 @@ def apply_theme(theme_mode: str) -> None:
         }}
 
         .section-kicker {{
-            color: var(--teal);
+            color: var(--accent-warm);
             text-transform: uppercase;
-            font-size: 0.75rem;
-            letter-spacing: 0.14em;
-            font-weight: 700;
-            margin-bottom: 0.2rem;
+            font-size: 0.76rem;
+            letter-spacing: 0.16em;
+            font-weight: 800;
+            margin-bottom: 0.26rem;
         }}
 
         .section-title {{
             color: var(--ink);
-            font-size: 1.35rem;
-            font-weight: 900;
-            margin-bottom: 0.35rem;
+            font-family: Georgia, "Iowan Old Style", serif;
+            font-size: 1.75rem;
+            line-height: 1;
+            letter-spacing: -0.03em;
+            font-weight: 700;
+            margin-bottom: 0.42rem;
         }}
 
         .insight-chip,
@@ -382,67 +528,95 @@ def apply_theme(theme_mode: str) -> None:
             display: inline-block;
             border-radius: 999px;
             border: 1px solid var(--line);
-            background: var(--paper-soft);
-            color: var(--ink);
-            font-size: 0.88rem;
-            font-weight: 600;
-            transition: transform 0.18s ease, border-color 0.18s ease;
+            background: var(--chip-bg);
+            color: var(--chip-ink);
+            font-size: 0.84rem;
+            font-weight: 700;
         }}
 
         .insight-chip {{
-            padding: 0.45rem 0.75rem;
-            margin: 0 0.45rem 0.45rem 0;
+            padding: 0.42rem 0.74rem;
+            margin: 0 0.42rem 0.42rem 0;
         }}
 
         .mini-stat {{
-            margin: 0 0.45rem 0.45rem 0;
-            padding: 0.45rem 0.72rem;
+            margin: 0 0.42rem 0.42rem 0;
+            padding: 0.38rem 0.7rem;
         }}
 
         .prompt-chip {{
-            margin: 0 0.5rem 0.5rem 0;
-            padding: 0.5rem 0.8rem;
-        }}
-
-        .insight-chip:hover,
-        .mini-stat:hover,
-        .prompt-chip:hover {{
-            transform: translateY(-1px);
-            border-color: var(--teal);
+            margin: 0 0.46rem 0.46rem 0;
+            padding: 0.44rem 0.78rem;
         }}
 
         .file-card {{
-            background: var(--paper-soft);
+            background: linear-gradient(180deg, var(--panel), var(--panel-soft));
             border: 1px solid var(--line);
-            border-radius: 20px;
-            padding: 1rem;
-            margin-bottom: 0.8rem;
-            transition: transform 0.18s ease, border-color 0.18s ease;
+            border-radius: 22px;
+            padding: 1rem 1.05rem;
+            margin-bottom: 0.9rem;
+            position: relative;
+            overflow: hidden;
         }}
 
-        .file-card:hover {{
-            transform: translateY(-2px);
-            border-color: var(--teal);
+        .file-card::before {{
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 6px;
+            background: linear-gradient(180deg, var(--accent), var(--accent-warm));
         }}
 
         .file-card h4 {{
-            margin: 0 0 0.35rem 0;
-            font-size: 1rem;
+            margin: 0 0 0.3rem 0;
+            font-size: 1.02rem;
             font-weight: 800;
             color: var(--ink);
         }}
 
+        .list-tight {{
+            margin: 0;
+            padding-left: 1rem;
+            color: var(--muted);
+        }}
+
+        .list-tight li {{
+            margin-bottom: 0.3rem;
+        }}
+
         [data-testid="stChatMessage"] {{
-            background: var(--paper-soft);
+            background: var(--chat-bg);
             border: 1px solid var(--line);
-            border-radius: 20px;
-            padding: 0.3rem 0.35rem;
+            border-radius: 22px;
+            padding: 0.58rem 0.74rem;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.06);
         }}
 
         [data-testid="stExpander"] {{
             border: 1px solid var(--line);
             border-radius: 18px;
             overflow: hidden;
+        }}
+
+        [data-testid="stAudio"] {{
+            background: var(--audio-bg);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 0.4rem 0.55rem;
+        }}
+
+        @media (max-width: 900px) {{
+            .hero-title {{
+                font-size: 2.5rem;
+            }}
+
+            .hero-shell {{
+                padding: 1.45rem 1.25rem 1.2rem 1.25rem;
+            }}
+
+            .section-title {{
+                font-size: 1.45rem;
+            }}
         }}
         </style>
         """,
@@ -460,6 +634,15 @@ def initialize_state() -> None:
         "editor_text",
         "Paste a draft here, then use CloudInsight actions to tighten tone, summarize, expand, or smooth grammar.",
     )
+    st.session_state.setdefault("tts_audio_bytes", b"")
+    st.session_state.setdefault("tts_audio_format", "audio/wav")
+    st.session_state.setdefault("tts_audio_label", "")
+    st.session_state.setdefault("tts_audio_name", "cloudinsight-readout.wav")
+
+
+def has_structured_data(results: list[dict[str, Any]]) -> bool:
+    """Return whether any uploaded result is a tabular dataset."""
+    return any(result.get("file_type") in DATA_TYPES for result in results)
 
 
 def save_uploaded_file(uploaded_file: Any) -> Path:
@@ -509,31 +692,73 @@ def infer_record_count(result: dict[str, Any]) -> int:
     return len(result.get("content", {}).get("sections", []))
 
 
+def normalize_token(token: str) -> str:
+    """Normalize a token for more forgiving lexical retrieval."""
+    normalized = token.lower().strip()
+    for suffix in (
+        "ization",
+        "ations",
+        "ation",
+        "ments",
+        "ment",
+        "ingly",
+        "edly",
+        "iness",
+        "iness",
+        "lessly",
+        "lessly",
+        "ships",
+        "ingly",
+        "ness",
+        "less",
+        "tion",
+        "sion",
+        "ings",
+        "ing",
+        "edly",
+        "edly",
+        "ers",
+        "ies",
+        "ied",
+        "ers",
+        "er",
+        "ed",
+        "es",
+        "s",
+    ):
+        if normalized.endswith(suffix) and len(normalized) - len(suffix) >= 4:
+            if suffix in {"ies", "ied"}:
+                return normalized[: -len(suffix)] + "y"
+            return normalized[: -len(suffix)]
+    return normalized
+
+
 def tokenize(text: str) -> list[str]:
-    """Convert text into a light-weight token list for retrieval and keywords."""
+    """Convert text into a normalized token list for retrieval and keywords."""
     cleaned = "".join(char.lower() if char.isalnum() else " " for char in text)
-    return [token for token in cleaned.split() if len(token) > 2]
+    tokens: list[str] = []
+    for raw_token in cleaned.split():
+        normalized = normalize_token(raw_token)
+        if len(normalized) <= 2 or normalized in RETRIEVAL_STOP_WORDS:
+            continue
+        tokens.append(normalized)
+    return tokens
+
+
+def is_summary_style_question(question: str) -> bool:
+    """Detect broad summary prompts that should still work without exact token overlap."""
+    normalized = " ".join(question.lower().split())
+    return any(phrase in normalized for phrase in SUMMARY_STYLE_PHRASES)
 
 
 def top_keywords(text: str, limit: int = 8) -> list[str]:
     """Return simple high-signal keywords from extracted text."""
-    stop_words = {
-        "the",
-        "and",
-        "for",
-        "with",
-        "this",
-        "that",
-        "from",
-        "into",
+    stop_words = RETRIEVAL_STOP_WORDS | {
         "rows",
         "columns",
         "contains",
         "sheet",
         "slide",
-        "page",
-        "table",
-        "document",
         "sample",
         "text",
     }
@@ -617,6 +842,169 @@ def result_stat_chips(result: dict[str, Any]) -> list[str]:
     return chips[:4]
 
 
+def routing_label(file_type: str) -> str:
+    """Return the platform pipeline that handled a file."""
+    if file_type in {"pdf", "docx", "txt"}:
+        return "NLP ingestion pipeline"
+    if file_type == "pptx":
+        return "Slide summarization pipeline"
+    if file_type in {"csv", "xlsx"}:
+        return "Data analysis ingestion pipeline"
+    return "Unknown pipeline"
+
+
+def feature_highlights(result: dict[str, Any]) -> list[str]:
+    """Return visible ingestion capabilities for the selected file."""
+    file_type = result.get("file_type")
+    if file_type == "pdf":
+        return [
+            "Page-wise text extraction",
+            "Empty-page warning detection",
+            "Normalized text sections for RAG",
+        ]
+    if file_type == "docx":
+        return [
+            "Paragraph-level extraction",
+            "Embedded table previews",
+            "Table text flattened for retrieval",
+        ]
+    if file_type == "pptx":
+        return [
+            "Slide-wise extraction",
+            "Slide title capture",
+            "Grouped shape and table text support",
+        ]
+    if file_type == "csv":
+        return [
+            "Schema and dtype detection",
+            "Missing-value profiling",
+            "Numeric summary and preview rows",
+        ]
+    if file_type == "xlsx":
+        return [
+            "Workbook sheet routing",
+            "Per-sheet table previews",
+            "Numeric summary by sheet",
+        ]
+    return ["Standardized ingestion payload"]
+
+
+def render_badges(items: list[str], css_class: str = "mini-stat") -> None:
+    """Render a compact badge row."""
+    if not items:
+        return
+    html = "".join(f'<span class="{css_class}">{item}</span>' for item in items)
+    st.markdown(html, unsafe_allow_html=True)
+
+
+@st.cache_resource(show_spinner=False)
+def get_chat_engine() -> ChatEngine:
+    """Return a cached chat engine for grounded responses."""
+    return ChatEngine()
+
+
+def recent_conversation(limit: int = 6) -> list[dict[str, str]]:
+    """Return the most recent chat turns for conversational continuity."""
+    turns: list[dict[str, str]] = []
+    for message in st.session_state.get("chat_messages", [])[-limit:]:
+        role = message.get("role")
+        content = message.get("content")
+        if role in {"user", "assistant"} and content:
+            turns.append({"role": str(role), "content": str(content)})
+    return turns
+
+
+def chat_mode_note() -> tuple[str, str]:
+    """Return the active chat mode label and supporting copy."""
+    engine = get_chat_engine()
+    if engine.is_remote_enabled:
+        return engine.mode_label, "Full conversational mode is active with grounded retrieval."
+    return engine.mode_label, "A real API-backed model is not configured yet, so answers use local grounded mode."
+
+
+def audio_mime_type(path: Path) -> str:
+    """Infer the correct MIME type for a generated audio asset."""
+    return {
+        ".aiff": "audio/aiff",
+        ".aif": "audio/aiff",
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+    }.get(path.suffix.lower(), "audio/wav")
+
+
+def synthesize_audio_to_session(text: str, label: str) -> None:
+    """Generate a TTS clip and store it in session state for playback."""
+    spoken_text = text_for_audio(text)
+    if not spoken_text:
+        st.warning("There was no clean text available to read aloud.")
+        return
+
+    audio_path = TTSEngine.synthesize(spoken_text)
+    if not audio_path:
+        st.warning("Audio generation was unavailable for that text.")
+        return
+
+    path = Path(audio_path)
+    if not path.exists():
+        st.warning("The generated audio file could not be found.")
+        return
+
+    st.session_state.tts_audio_bytes = path.read_bytes()
+    st.session_state.tts_audio_format = audio_mime_type(path)
+    st.session_state.tts_audio_label = label
+    st.session_state.tts_audio_name = path.name
+
+
+def text_for_audio(text: str) -> str:
+    """Convert markdown-ish UI text into cleaner spoken text."""
+    normalized_lines = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            line = line.lstrip(">").strip()
+        if line.startswith("- "):
+            line = line[2:].strip()
+        line = line.replace("**", "").replace("*", "").replace("`", "")
+        normalized_lines.append(line)
+    return " ".join(normalized_lines)
+
+
+def render_tts_panel(key_prefix: str) -> None:
+    """Render the latest generated audio clip if one exists."""
+    if not st.session_state.get("tts_audio_bytes"):
+        return
+
+    with st.container(border=True):
+        section_header(
+            "Audio",
+            st.session_state.get("tts_audio_label", "Generated narration"),
+            "Listen to the latest narration generated from the chatbot or editor, then download it if you want to keep a copy.",
+        )
+        st.audio(
+            st.session_state.tts_audio_bytes,
+            format=st.session_state.get("tts_audio_format", "audio/wav"),
+        )
+        action_left, action_right = st.columns((0.7, 0.3), gap="small")
+        with action_left:
+            st.download_button(
+                "Download Audio",
+                data=st.session_state.tts_audio_bytes,
+                file_name=st.session_state.get("tts_audio_name", "cloudinsight-readout.wav"),
+                mime=st.session_state.get("tts_audio_format", "audio/wav"),
+                use_container_width=True,
+                key=f"{key_prefix}_download_audio",
+            )
+        with action_right:
+            if st.button("Clear Audio", use_container_width=True, key=f"{key_prefix}_clear_audio"):
+                st.session_state.tts_audio_bytes = b""
+                st.session_state.tts_audio_label = ""
+                st.session_state.tts_audio_name = "cloudinsight-readout.wav"
+                st.session_state.tts_audio_format = "audio/wav"
+                st.rerun()
+
+
 def scope_results(results: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
     """Filter results to the selected chat scope."""
     if scope == "All files":
@@ -625,34 +1013,94 @@ def scope_results(results: list[dict[str, Any]], scope: str) -> list[dict[str, A
 
 
 def retrieve_relevant_sections(question: str, results: list[dict[str, Any]], limit: int = 4) -> list[dict[str, Any]]:
-    """Retrieve the highest-overlap sections for a question."""
+    """Retrieve relevant sections with direct matching first and representative fallbacks second."""
     question_tokens = set(tokenize(question))
-    matches: list[dict[str, Any]] = []
+    summary_style = is_summary_style_question(question)
+    direct_matches: list[dict[str, Any]] = []
+    fallback_matches: list[dict[str, Any]] = []
 
     for result in results:
-        for section in result.get("content", {}).get("sections", []):
+        sections = list(result.get("content", {}).get("sections", []))
+        if not sections:
+            fallback_text = str(result.get("content", {}).get("text", "")).strip()
+            if fallback_text:
+                sections = [{"id": "summary", "type": "summary", "text": fallback_text}]
+
+        file_name = result.get("file_name", "Unnamed")
+        file_name_tokens = set(tokenize(file_name))
+
+        for index, section in enumerate(sections):
             text = str(section.get("text", "")).strip()
             if not text:
                 continue
+
+            section_id = str(section.get("id", "section"))
+            section_type = str(section.get("type", "section"))
             section_tokens = set(tokenize(text))
+            section_prefixes = {token[:4] for token in section_tokens if len(token) >= 4}
+            text_lower = text.lower()
+
             overlap = len(question_tokens & section_tokens)
-            if overlap == 0:
-                continue
-            matches.append(
+            partial_hits = len(
                 {
-                    "score": overlap,
-                    "file_name": result.get("file_name", "Unnamed"),
-                    "section_id": section.get("id", "section"),
-                    "text": text,
+                    token
+                    for token in question_tokens
+                    if len(token) >= 4 and token[:4] in section_prefixes
+                }
+            )
+            phrase_hits = sum(1 for token in question_tokens if token in text_lower)
+            file_name_hits = len(question_tokens & file_name_tokens)
+
+            score = (overlap * 8) + (max(0, partial_hits - overlap) * 3) + phrase_hits + (file_name_hits * 2)
+
+            if summary_style:
+                if index == 0:
+                    score += 3
+                if "summary" in section_id.lower() or "summary" in section_type.lower():
+                    score += 6
+                if section_id.lower().startswith(("page_1", "paragraph_1", "slide_1", "sheet_1")):
+                    score += 2
+
+            match_payload = {
+                "score": score,
+                "file_name": file_name,
+                "section_id": section_id,
+                "text": text,
+                "match_strength": "direct" if score > 0 else "fallback",
+            }
+
+            if score > 0:
+                direct_matches.append(match_payload)
+                continue
+
+            fallback_score = min(len(section_tokens), 24)
+            if "summary" in section_id.lower() or "summary" in section_type.lower():
+                fallback_score += 10
+            if section_type in {"dataset_summary", "summary"}:
+                fallback_score += 6
+            if index == 0:
+                fallback_score += 4
+            if section_id.lower().startswith(("page_1", "paragraph_1", "slide_1", "sheet_1")):
+                fallback_score += 3
+            if len(text) >= 240:
+                fallback_score += 2
+
+            fallback_matches.append(
+                {
+                    **match_payload,
+                    "score": max(1, fallback_score),
+                    "match_strength": "fallback",
                 }
             )
 
-    return sorted(matches, key=lambda item: item["score"], reverse=True)[:limit]
+    if direct_matches:
+        return sorted(direct_matches, key=lambda item: item["score"], reverse=True)[:limit]
+
+    return sorted(fallback_matches, key=lambda item: item["score"], reverse=True)[:limit]
 
 
 def run_chat_query(question: str, scoped_results: list[dict[str, Any]], scope_label: str) -> None:
     """Append a grounded chat exchange to session state."""
-    answer = simple_chat_response(question, scoped_results, scope_label)
     st.session_state.chat_messages.append(
         {
             "role": "user",
@@ -660,7 +1108,25 @@ def run_chat_query(question: str, scoped_results: list[dict[str, Any]], scope_la
             "scope": scope_label,
         }
     )
+    answer = simple_chat_response(question, scoped_results, scope_label)
     st.session_state.chat_messages.append(answer)
+
+
+def fallback_chat_message(matches: list[dict[str, Any]], scope_label: str) -> str:
+    """Return a simple bullet-based fallback when the chat engine cannot answer cleanly."""
+    if not matches:
+        return f"I couldn't find a direct text match in {scope_label.lower()}, and the local chat engine could not synthesize a stronger answer."
+
+    lead = (
+        f"Across {scope_label.lower()}, the strongest evidence points to these ideas:"
+        if scope_label == "All files"
+        else f"In {scope_label}, the strongest evidence points to these ideas:"
+    )
+    bullets = []
+    for match in matches[:3]:
+        snippet = match["text"].replace("\n", " ").strip()
+        bullets.append(f"- {snippet[:220]}")
+    return lead + "\n" + "\n".join(bullets)
 
 
 def build_dataset_from_result(result: dict[str, Any]) -> pd.DataFrame:
@@ -727,7 +1193,7 @@ def detect_data_insights(frame: pd.DataFrame) -> list[str]:
 
 
 def simple_chat_response(question: str, results: list[dict[str, Any]], scope_label: str) -> dict[str, Any]:
-    """Return a grounded local retrieval response with evidence."""
+    """Return a grounded chat-engine response with evidence and fallbacks."""
     if not results:
         return {
             "role": "assistant",
@@ -737,8 +1203,9 @@ def simple_chat_response(question: str, results: list[dict[str, Any]], scope_lab
             "scope": scope_label,
         }
 
+    summary_style = is_summary_style_question(question)
     question_tokens = set(tokenize(question))
-    if not question_tokens:
+    if not question_tokens and not summary_style:
         return {
             "role": "assistant",
             "content": "Try a more specific question, such as asking about key metrics, dominant themes, or one uploaded file by name.",
@@ -749,29 +1216,38 @@ def simple_chat_response(question: str, results: list[dict[str, Any]], scope_lab
 
     matches = retrieve_relevant_sections(question, results)
     if not matches:
-        summaries = " ".join(summarize_result(item) for item in results[:3])
         return {
             "role": "assistant",
-            "content": f"I couldn't find a close textual match in {scope_label.lower()}, so here is the current platform context: {summaries}",
-            "sources": [item.get("file_name", "Unnamed") for item in results[:3]],
+            "content": (
+                "I couldn't find direct evidence for that in the selected files. "
+                "Try different keywords, narrow the scope to one file, or ask about a phrase that appears in the document."
+            ),
+            "sources": [],
             "matches": [],
             "scope": scope_label,
         }
 
+    context_matches = matches
     sources = list(dict.fromkeys(match["file_name"] for match in matches))
-    lead = (
-        f"Across {scope_label.lower()}, the strongest evidence points to these ideas:"
-        if scope_label == "All files"
-        else f"In {scope_label}, the strongest evidence points to these ideas:"
-    )
-    bullets = []
-    for match in matches[:3]:
-        snippet = match["text"].replace("\n", " ").strip()
-        bullets.append(f"- {snippet[:220]}")
+
+    try:
+        response_text = get_chat_engine().generate_response(
+            question,
+            context_matches,
+            conversation=recent_conversation(),
+        )
+    except Exception:
+        response_text = fallback_chat_message(context_matches, scope_label)
+
+    if matches and all(match.get("match_strength") == "fallback" for match in matches):
+        response_text = (
+            "I didn't find an exact phrase match, so I answered from the most representative sections in the selected files.\n\n"
+            + response_text
+        )
 
     return {
         "role": "assistant",
-        "content": lead + "\n" + "\n".join(bullets),
+        "content": response_text,
         "sources": sources,
         "matches": matches,
         "scope": scope_label,
@@ -878,28 +1354,45 @@ def render_sentiment_panel(text: str) -> None:
 
 def render_sidebar() -> list[Any]:
     """Render the control sidebar."""
-    st.sidebar.markdown("## CloudInsight")
-    st.sidebar.markdown("Upload files, inspect extracted structure, then move into insights, charts, chat, or editing.")
+    badges = "".join(
+        f'<span class="sidebar-badge">{label}</span>' for label in ("Docs", "Tables", "Chat", "Audio")
+    )
+    st.sidebar.markdown(
+        f"""
+        <div class="sidebar-shell">
+            <div class="sidebar-brand">CloudInsight</div>
+            <p class="sidebar-note">
+                A smaller local workspace for uploading files, checking what was extracted, and chatting against that evidence.
+            </p>
+            <div class="sidebar-badges">{badges}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     dark_mode = st.sidebar.toggle(
         "Dark mode",
         value=st.session_state.theme_mode == "Dark",
-        help="Switch between light and dark presentation modes.",
+        help="Switch between light and dark workspace modes.",
     )
     st.session_state.theme_mode = "Dark" if dark_mode else "Light"
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### Input Formats")
+    st.sidebar.markdown("### Supported Files")
     for suffix, label in SUPPORTED_FILE_TYPES.items():
-        st.sidebar.markdown(f"- `{suffix}`  {label}")
+        st.sidebar.markdown(f"- `{suffix}` {label}")
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### Workflow")
-    st.sidebar.markdown("1. Upload one or more files")
-    st.sidebar.markdown("2. Review extraction quality")
-    st.sidebar.markdown("3. Explore insights and ask questions")
-    st.sidebar.markdown("4. Refine narrative in the editor")
+    st.sidebar.markdown("### This V1 Does")
+    st.sidebar.markdown("- Upload PDF, DOCX, PPTX, CSV, and XLSX files")
+    st.sidebar.markdown("- Show extracted text, sections, tables, and warnings")
+    st.sidebar.markdown("- Answer questions with local Ollama chat")
+    st.sidebar.markdown("- Read assistant answers aloud")
     st.sidebar.markdown("---")
     if st.sidebar.button("Clear Workspace", use_container_width=True):
         st.session_state.analyses = []
         st.session_state.chat_messages = []
+        st.session_state.tts_audio_bytes = b""
+        st.session_state.tts_audio_label = ""
+        st.session_state.tts_audio_name = "cloudinsight-readout.wav"
+        st.session_state.tts_audio_format = "audio/wav"
         st.rerun()
     return st.sidebar.file_uploader(
         "Upload files",
@@ -933,22 +1426,23 @@ def handle_uploads(uploaded_files: list[Any]) -> None:
 
 def render_hero(results: list[dict[str, Any]]) -> None:
     """Render the dashboard hero and metric strip."""
+    successful = sum(1 for item in results if item.get("status") == "success")
+    data_assets = sum(1 for item in results if item.get("file_type") in DATA_TYPES)
     hero_left, hero_right = st.columns((1.45, 0.8), gap="large")
     with hero_left:
         st.markdown(
             """
             <div class="hero-shell">
-                <div class="eyebrow">AI Document & Data Intelligence</div>
-                <div class="hero-title">CloudInsight v2</div>
+                <div class="eyebrow">Document Intelligence Studio</div>
+                <div class="hero-title">CloudInsight</div>
                 <p class="hero-copy">
-                    Turn PDFs, decks, spreadsheets, and reports into a single intelligence surface.
-                    This dashboard is organized around one simple flow: ingest, understand, visualize, and ask.
+                    This rescue build focuses on one job: upload files, verify the extraction, then ask grounded questions against the evidence.
                 </p>
                 <div class="hero-steps">
-                    <span class="hero-step">1. Upload mixed files</span>
-                    <span class="hero-step">2. Inspect extracted structure</span>
-                    <span class="hero-step">3. Generate dataset signals</span>
-                    <span class="hero-step">4. Query and rewrite with AI</span>
+                    <span class="hero-step">Upload mixed files</span>
+                    <span class="hero-step">Inspect extraction</span>
+                    <span class="hero-step">Ask grounded questions</span>
+                    <span class="hero-step">Listen to answers</span>
                 </div>
             </div>
             """,
@@ -956,14 +1450,28 @@ def render_hero(results: list[dict[str, Any]]) -> None:
         )
     with hero_right:
         st.markdown(
-            """
+            f"""
             <div class="hero-sidecard">
-                <h4>What this page is showing</h4>
+                <h4>Current Scope</h4>
                 <p>
-                    Overview gives you the portfolio view. Intelligence shows file-by-file extraction.
-                    Visualizations focuses on structured data. Chat is the retrieval workspace.
-                    Editor is the writing surface for AI-assisted drafting.
+                    {successful} file(s) are live in the workspace. This version intentionally trims the surface area
+                    so the files view and the chat view are the parts that have to work.
                 </p>
+                <div class="hero-side-meter">
+                    <div class="hero-meter-card">
+                        <div class="hero-meter-label">Files Ready</div>
+                        <div class="hero-meter-value">{successful}</div>
+                    </div>
+                    <div class="hero-meter-card">
+                        <div class="hero-meter-label">Data Assets</div>
+                        <div class="hero-meter-value">{data_assets}</div>
+                    </div>
+                </div>
+                <ul class="hero-side-list">
+                    <li>Use <strong>Workspace</strong> to see what was loaded and any parser warnings.</li>
+                    <li>Use <strong>Files</strong> to inspect actual extracted text and table structure.</li>
+                    <li>Use <strong>Ask</strong> when you want evidence-backed answers only.</li>
+                </ul>
             </div>
             """,
             unsafe_allow_html=True,
@@ -990,12 +1498,12 @@ def render_overview_tab(results: list[dict[str, Any]]) -> None:
     with left:
         with st.container(border=True):
             section_header(
-                "Portfolio View",
-                "Recent files and extraction status",
-                "Use this panel to confirm that each file was routed through the right ingestion path before moving deeper.",
+                "Workspace",
+                "Files and extraction status",
+                "Check which parser handled each file and whether anything important was missed.",
             )
             if not results:
-                st.info("Upload one or more files from the sidebar to populate the workspace.")
+                st.info("Upload one or more files from the sidebar to start the rescue build workflow.")
             else:
                 for result in results:
                     chips = "".join(f'<span class="mini-stat">{chip}</span>' for chip in result_stat_chips(result))
@@ -1006,7 +1514,9 @@ def render_overview_tab(results: list[dict[str, Any]]) -> None:
                         f"""
                         <div class="file-card">
                             <h4>{result.get('file_name', 'Unnamed')}</h4>
-                            <div class="file-meta">{result.get('file_type', 'unknown').upper()} · {result.get('status', 'unknown').upper()}</div>
+                            <div class="file-meta">
+                                {result.get('file_type', 'unknown').upper()} · {result.get('status', 'unknown').upper()} · {routing_label(result.get('file_type', 'unknown'))}
+                            </div>
                             <div>{summarize_result(result)}</div>
                             <div style="margin-top:0.7rem;">{chips}</div>
                             {warning_copy}
@@ -1018,23 +1528,33 @@ def render_overview_tab(results: list[dict[str, Any]]) -> None:
     with right:
         with st.container(border=True):
             section_header(
-                "Orientation",
-                "What CloudInsight is surfacing",
-                "The keywords below are derived from extracted text across all successful files and give you a fast sense of the dominant topics.",
+                "Topics",
+                "Current workspace signals",
+                "Keywords are generated from the extracted text already inside the workspace.",
             )
             combined_text = " ".join(result.get("content", {}).get("text", "") for result in results)
             keywords = top_keywords(combined_text)
             if keywords:
-                chips = "".join(f'<span class="insight-chip">{keyword}</span>' for keyword in keywords)
-                st.markdown(chips, unsafe_allow_html=True)
+                render_badges(keywords, css_class="insight-chip")
             else:
                 st.caption("Keywords appear after the first successful extraction.")
 
         with st.container(border=True):
             section_header(
-                "Next Step",
-                "How to move through the dashboard",
-                "If you want to verify extraction quality, go to Intelligence. If you want data patterns, go to Visualizations. If you want Q&A, use Chat. If you want to refine language, use Editor.",
+                "What This App Does Well",
+                "The parts worth trusting in this build",
+                "This smaller v1 is centered on extraction visibility, grounded chat, and local audio playback.",
+            )
+            st.markdown(
+                """
+                <ul class="list-tight">
+                    <li>PDFs show page-level extraction and warnings for empty pages.</li>
+                    <li>DOCX and PPTX files surface paragraph and slide content for inspection.</li>
+                    <li>CSV and XLSX files keep schema, preview rows, and sheet-level summaries.</li>
+                    <li>The Ask tab uses local Ollama chat with grounded evidence snippets.</li>
+                </ul>
+                """,
+                unsafe_allow_html=True,
             )
 
 
@@ -1055,12 +1575,12 @@ def render_intelligence_tab(results: list[dict[str, Any]]) -> None:
     with top_left:
         with st.container(border=True):
             section_header(
-                "Extraction Summary",
+                "File Details",
                 selected_name,
                 summarize_result(result),
             )
-            for chip in result_stat_chips(result):
-                st.markdown(f'<span class="mini-stat">{chip}</span>', unsafe_allow_html=True)
+            render_badges(result_stat_chips(result))
+            render_badges(feature_highlights(result), css_class="insight-chip")
             if result.get("warnings"):
                 st.warning("; ".join(result["warnings"]))
             if result.get("errors"):
@@ -1069,10 +1589,11 @@ def render_intelligence_tab(results: list[dict[str, Any]]) -> None:
     with top_right:
         with st.container(border=True):
             section_header(
-                "Metadata",
-                "Technical extraction details",
-                "This is the normalized metadata payload returned by the ingestion layer.",
+                "Routing",
+                "Pipeline and extraction contract",
+                "This file now exposes the normalized ingestion payload used by the downstream platform.",
             )
+            st.markdown(f"**Pipeline:** {routing_label(result.get('file_type', 'unknown'))}")
             st.json(result.get("metadata", {}))
 
     bottom_left, bottom_right = st.columns((1.2, 0.9), gap="large")
@@ -1081,12 +1602,12 @@ def render_intelligence_tab(results: list[dict[str, Any]]) -> None:
             section_header(
                 "Content Preview",
                 "Extracted text",
-                "Review this panel to check whether the parser captured the source material correctly.",
+                "Use this to validate that the parser captured the source material cleanly.",
             )
             preview_text = result.get("content", {}).get("text", "")
             st.text_area(
                 "Extracted Preview",
-                value=preview_text[:1800] if preview_text else "No text preview available.",
+                value=preview_text[:2400] if preview_text else "No text preview available.",
                 height=360,
                 label_visibility="collapsed",
                 disabled=True,
@@ -1097,13 +1618,14 @@ def render_intelligence_tab(results: list[dict[str, Any]]) -> None:
         with st.container(border=True):
             section_header(
                 "Structured Elements",
-                "Sections and tables",
-                "This view highlights the structured objects emitted by the extractor, such as pages, slides, paragraphs, and table previews.",
+                "Sections and tables emitted by ingestion",
+                "These are the structured objects now available to later phases such as retrieval and analytics.",
             )
             sections = result.get("content", {}).get("sections", [])
-            st.metric("Section Count", len(sections))
             tables = result.get("content", {}).get("tables", [])
-            st.metric("Table Objects", len(tables))
+            metric_left, metric_right = st.columns(2)
+            metric_left.metric("Section Count", len(sections))
+            metric_right.metric("Table Objects", len(tables))
             if tables:
                 first_table = tables[0]
                 rows = first_table.get("preview_rows") or first_table.get("rows") or []
@@ -1112,6 +1634,35 @@ def render_intelligence_tab(results: list[dict[str, Any]]) -> None:
             elif sections:
                 preview_sections = pd.DataFrame(sections[:8])
                 st.dataframe(preview_sections, use_container_width=True, hide_index=True)
+
+    with st.container(border=True):
+        section_header(
+            "Visible Features",
+            "What this file now contributes to the platform",
+            "This section makes the new ingestion capabilities explicit in the product surface.",
+        )
+        info_left, info_right = st.columns((0.9, 1.1), gap="large")
+        with info_left:
+            st.markdown("**Enabled outputs**")
+            for item in feature_highlights(result):
+                st.markdown(f"- {item}")
+        with info_right:
+            tables = result.get("content", {}).get("tables", [])
+            sections = result.get("content", {}).get("sections", [])
+            if tables:
+                table = tables[0]
+                st.markdown("**First table schema**")
+                schema_frame = pd.DataFrame(
+                    {
+                        "column": table.get("column_names", []),
+                        "dtype": [table.get("dtypes", {}).get(name, "") for name in table.get("column_names", [])],
+                        "missing": [table.get("missing_values", {}).get(name, 0) for name in table.get("column_names", [])],
+                    }
+                )
+                st.dataframe(schema_frame, use_container_width=True, hide_index=True)
+            elif sections:
+                st.markdown("**Section preview**")
+                st.dataframe(pd.DataFrame(sections[:10]), use_container_width=True, hide_index=True)
 
 
 def render_visualization_tab(results: list[dict[str, Any]]) -> None:
@@ -1245,18 +1796,25 @@ def render_chat_tab(results: list[dict[str, Any]]) -> None:
     )
     st.session_state.chat_scope = selected_scope
     scoped_results = scope_results(results, selected_scope)
+    mode_label, mode_copy = chat_mode_note()
 
     with st.container(border=True):
         section_header(
-            "Retrieval Workspace",
-            "Ask grounded questions about your documents",
-            "Choose a scope, ask a question, and CloudInsight will answer using the most relevant extracted sections from the selected files.",
+            "Chat",
+            "Talk to your uploaded files",
+            "Choose a scope, ask a question in plain language, and CloudInsight will answer from retrieved evidence in the selected files.",
         )
 
-        guide_left, guide_right = st.columns((1.15, 0.85), gap="large")
+        guide_left, guide_right = st.columns((1.2, 0.8), gap="large")
         with guide_left:
-            st.caption(
-                f"Current scope: {selected_scope}. Matching sections are ranked by token overlap against your question."
+            st.markdown(
+                f"""
+                <div class="small-muted">
+                    <strong>Mode:</strong> {mode_label}<br/>
+                    <strong>Scope:</strong> {selected_scope}. {mode_copy}
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
             prompt_columns = st.columns(len(CHAT_PROMPTS))
             chosen_prompt = None
@@ -1270,8 +1828,19 @@ def render_chat_tab(results: list[dict[str, Any]]) -> None:
                 st.write(f"{len(scoped_results)} file(s) in context")
                 for result in scoped_results[:3]:
                     st.markdown(f'<span class="mini-stat">{result.get("file_name", "Unnamed")}</span>', unsafe_allow_html=True)
+                if st.button("Clear Chat", key="clear_chat_thread", use_container_width=True):
+                    st.session_state.chat_messages = []
+                    st.rerun()
 
-        for message in st.session_state.chat_messages[-10:]:
+        if not st.session_state.chat_messages:
+            with st.chat_message("assistant"):
+                st.markdown(
+                    "I’m ready. Ask for a summary, comparisons, unusual findings, or details from one specific file."
+                )
+
+        render_tts_panel("chat")
+
+        for index, message in enumerate(st.session_state.chat_messages[-10:]):
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 if message.get("sources"):
@@ -1281,22 +1850,18 @@ def render_chat_tab(results: list[dict[str, Any]]) -> None:
                         for match in message["matches"][:3]:
                             st.markdown(f"**{match['file_name']} · {match['section_id']}**")
                             st.write(match["text"][:280])
-
-        with st.form("chat_query_form", clear_on_submit=True):
-            ask_left, ask_right = st.columns((1, 0.22), gap="small")
-            with ask_left:
-                question = st.text_input(
-                    "Ask about the uploaded materials",
-                    placeholder="What are the main themes across the uploaded files?",
-                )
-            with ask_right:
-                submit = st.form_submit_button("Ask", use_container_width=True)
+                if message["role"] == "assistant":
+                    if st.button("Read Aloud", key=f"chat_tts_{index}", use_container_width=False):
+                        synthesize_audio_to_session(message["content"], "Chatbot narration")
+                        st.rerun()
 
         if chosen_prompt:
             run_chat_query(chosen_prompt, scoped_results, selected_scope)
             st.rerun()
-        if submit and question.strip():
-            run_chat_query(question.strip(), scoped_results, selected_scope)
+
+        prompt = st.chat_input("Ask about the selected files")
+        if prompt and prompt.strip():
+            run_chat_query(prompt.strip(), scoped_results, selected_scope)
             st.rerun()
 
 
@@ -1336,6 +1901,16 @@ def render_editor_tab() -> None:
                 run_editor_action(action)
                 st.rerun()
 
+        utility_left, utility_right = st.columns((0.4, 0.6), gap="small")
+        with utility_left:
+            if st.button("Listen Draft", use_container_width=True):
+                synthesize_audio_to_session(st.session_state.editor_text, "Draft narration")
+                st.rerun()
+        with utility_right:
+            st.caption("Generate an audio readout of the current draft and play it back below.")
+
+        render_tts_panel("editor")
+
         st.download_button(
             "Download Draft",
             data=st.session_state.editor_text,
@@ -1356,20 +1931,17 @@ def main() -> None:
     results = st.session_state.analyses
     render_hero(results)
 
-    overview_tab, intelligence_tab, visualization_tab, chat_tab, editor_tab = st.tabs(
-        ["Overview", "Intelligence", "Visualizations", "Chat", "Editor"]
-    )
+    workspace_tab, files_tab, chat_tab = st.tabs(["Workspace", "Files", "Ask"])
 
-    with overview_tab:
+    with workspace_tab:
         render_overview_tab(results)
-    with intelligence_tab:
+    with files_tab:
         render_intelligence_tab(results)
-    with visualization_tab:
-        render_visualization_tab(results)
+        if has_structured_data(results):
+            st.divider()
+            render_visualization_tab(results)
     with chat_tab:
         render_chat_tab(results)
-    with editor_tab:
-        render_editor_tab()
 
 
 if __name__ == "__main__":

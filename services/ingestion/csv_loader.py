@@ -1,161 +1,115 @@
-"""CSV ingestion utilities for CloudInsight v2."""
+"""CSV ingestion service for CloudInsight."""
 
 from __future__ import annotations
 
-import csv
+import logging
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+from services.ingestion.common import (
+    IngestionValidationError,
+    build_dataset_text_summary,
+    build_error_result,
+    build_success_result,
+    summarize_dataframe,
+    validate_file,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class CSVLoader:
-    """Load CSV files into a standardized ingestion payload."""
+    """Load CSV files into a structured payload for analytics and RAG."""
 
-    SUPPORTED_SUFFIXES = {".csv"}
-
-    def __init__(self, *, chunksize: int = 10000, preview_rows: int = 50) -> None:
-        self.chunksize = chunksize
+    def __init__(
+        self,
+        preview_rows: int = 100,
+        encoding_candidates: tuple[str, ...] = ("utf-8", "utf-8-sig", "latin-1"),
+    ) -> None:
         self.preview_rows = preview_rows
+        self.encoding_candidates = encoding_candidates
 
     def load(self, file_path: str | Path) -> dict[str, Any]:
-        """Load CSV content and return a standardized payload."""
-        path = Path(file_path).expanduser()
-        detected_type = self._detect_file_type(path)
+        """Load a CSV file and return a normalized tabular result."""
+        try:
+            path = validate_file(file_path, {".csv"})
+        except IngestionValidationError as exc:
+            return build_error_result(file_path, "csv", errors=[str(exc)])
 
         try:
-            self._validate(path, detected_type)
-            delimiter = self._detect_delimiter(path)
+            import pandas as pd
+        except ImportError:
+            return build_error_result(
+                path,
+                "csv",
+                errors=["Missing dependency 'pandas'. Install it before ingesting CSV files."],
+            )
 
-            row_count = 0
-            chunks_processed = 0
-            preview_frames: list[pd.DataFrame] = []
-            header_frame = pd.read_csv(path, nrows=0, sep=delimiter)
-            columns = header_frame.columns.tolist()
-            dtypes: dict[str, str] = {}
-            warnings: list[str] = []
+        errors: list[str] = []
+        dataframe = None
+        selected_encoding = None
 
-            for chunk in pd.read_csv(path, chunksize=self.chunksize, sep=delimiter):
-                chunks_processed += 1
-                row_count += len(chunk)
+        for encoding in self.encoding_candidates:
+            try:
+                dataframe = pd.read_csv(path, encoding=encoding)
+                selected_encoding = encoding
+                break
+            except UnicodeDecodeError:
+                errors.append(f"Unable to decode CSV using '{encoding}'.")
+            except pd.errors.EmptyDataError as exc:
+                return build_error_result(path, "csv", errors=[f"CSV file is empty: {exc}"])
+            except Exception as exc:
+                return build_error_result(path, "csv", errors=[f"CSV loading failed: {exc}"])
 
-                if not dtypes:
-                    dtypes = {column: str(dtype) for column, dtype in chunk.dtypes.items()}
+        if dataframe is None:
+            return build_error_result(path, "csv", errors=errors or ["Unable to read CSV file."])
 
-                preview_collected = sum(len(frame) for frame in preview_frames)
-                if preview_collected < self.preview_rows:
-                    remaining = self.preview_rows - preview_collected
-                    preview_frames.append(chunk.head(remaining).copy())
+        try:
+            table = summarize_dataframe(
+                dataframe,
+                table_id="csv_data",
+                name=path.stem,
+                preview_rows=self.preview_rows,
+            )
+            summary_text = build_dataset_text_summary(path.name, [table])
+            sections = [
+                {
+                    "id": "csv_summary",
+                    "type": "dataset_summary",
+                    "text": summary_text,
+                    "row_count": table["row_count"],
+                    "column_count": table["column_count"],
+                }
+            ]
+            warnings = []
+            if dataframe.empty:
+                warnings.append("CSV file contains headers but no data rows.")
 
-            if row_count == 0:
-                warnings.append("CSV file was parsed successfully but contains no data rows.")
-
-            preview_df = pd.concat(preview_frames, ignore_index=True) if preview_frames else pd.DataFrame(columns=columns)
-            dataset_summary = self._build_dataset_summary(path, row_count, columns, dtypes)
             metadata = {
-                "file_size_bytes": path.stat().st_size,
-                "row_count": row_count,
-                "column_count": len(columns),
-                "delimiter": delimiter,
-                "chunks_processed": chunks_processed,
-                "preview_row_count": len(preview_df),
-                "truncated": row_count > len(preview_df),
+                "row_count": table["row_count"],
+                "column_count": table["column_count"],
+                "column_names": table["column_names"],
+                "encoding": selected_encoding,
             }
-            content = {
-                "text": dataset_summary,
-                "sections": [
-                    {
-                        "id": "dataset_1",
-                        "type": "dataset",
-                        "name": path.stem,
-                        "text": dataset_summary,
-                        "columns": columns,
-                    }
-                ],
-                "tables": [
-                    {
-                        "id": "table_1",
-                        "type": "table",
-                        "name": path.stem,
-                        "columns": columns,
-                        "dtypes": dtypes,
-                        "preview_rows": preview_df.to_dict(orient="records"),
-                    }
-                ],
-            }
-            return self._success_response(path, detected_type, metadata, content, warnings)
-        except Exception as exc:  # pragma: no cover - exercised through integration
-            return self._error_response(path, detected_type, exc)
+
+            logger.info("Loaded CSV content from %s", path)
+            return build_success_result(
+                path,
+                "csv",
+                metadata=metadata,
+                text=summary_text,
+                sections=sections,
+                tables=[table],
+                warnings=warnings,
+            )
+        except Exception as exc:
+            logger.exception("CSV summarization failed for %s", path)
+            return build_error_result(path, "csv", errors=[f"CSV summarization failed: {exc}"])
 
     def extract(self, file_path: str | Path) -> dict[str, Any]:
         """Alias to align CSV ingestion with extractor-style interfaces."""
         return self.load(file_path)
-
-    def _build_dataset_summary(
-        self,
-        path: Path,
-        row_count: int,
-        columns: list[str],
-        dtypes: dict[str, str],
-    ) -> str:
-        column_summary = ", ".join(f"{name} ({dtype})" for name, dtype in dtypes.items()) or "No columns detected"
-        return f"Dataset '{path.stem}' contains {row_count} rows and {len(columns)} columns: {column_summary}."
-
-    def _detect_delimiter(self, path: Path) -> str:
-        with path.open("r", encoding="utf-8", errors="ignore", newline="") as handle:
-            sample = handle.read(4096)
-
-        if not sample.strip():
-            return ","
-
-        try:
-            return csv.Sniffer().sniff(sample).delimiter
-        except csv.Error:
-            return ","
-
-    def _detect_file_type(self, path: Path) -> str:
-        return path.suffix.lower().lstrip(".") or "unknown"
-
-    def _validate(self, path: Path, detected_type: str) -> None:
-        if not path.exists():
-            raise FileNotFoundError(f"CSV file not found: {path}")
-        if not path.is_file():
-            raise ValueError(f"Expected a file path, received: {path}")
-        if path.suffix.lower() not in self.SUPPORTED_SUFFIXES:
-            raise ValueError(f"Unsupported file type for CSV loader: {detected_type}")
-
-    def _success_response(
-        self,
-        path: Path,
-        detected_type: str,
-        metadata: dict[str, Any],
-        content: dict[str, Any],
-        warnings: list[str],
-    ) -> dict[str, Any]:
-        return {
-            "status": "success",
-            "file_name": path.name,
-            "file_path": str(path.resolve()),
-            "file_type": "csv",
-            "detected_type": detected_type,
-            "metadata": metadata,
-            "content": content,
-            "warnings": warnings,
-            "errors": [],
-        }
-
-    def _error_response(self, path: Path, detected_type: str, exc: Exception) -> dict[str, Any]:
-        return {
-            "status": "error",
-            "file_name": path.name,
-            "file_path": str(path.resolve()),
-            "file_type": "csv",
-            "detected_type": detected_type,
-            "metadata": {},
-            "content": {"text": "", "sections": [], "tables": []},
-            "warnings": [],
-            "errors": [str(exc)],
-        }
 
 
 def load_csv(file_path: str | Path, **kwargs: Any) -> dict[str, Any]:
