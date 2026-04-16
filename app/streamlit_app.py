@@ -22,6 +22,7 @@ from services.ingestion.pdf_extractor import PDFExtractor
 from services.ingestion.pptx_extractor import PPTXExtractor
 from services.ingestion.xlsx_loader import XLSXLoader
 from services.llm.chat_engine import ChatEngine
+from services.llm.document_analysis_engine import DocumentAnalysisEngine
 from services.sentiment_analyzer import analyze_sentiment
 
 
@@ -113,35 +114,34 @@ def configure_page() -> None:
 
 
 def apply_theme(theme_mode: str) -> None:
-    """Inject a consistent light and dark theme."""
+    """Inject a cleaner Google-inspired visual system."""
     is_dark = theme_mode == "Dark"
     palette = {
-        "ink": "#ecf2ee" if is_dark else "#20251f",
-        "muted": "#9aac9f" if is_dark else "#667162",
-        "app_bg": "#0b1211" if is_dark else "#f2eadf",
-        "panel": "#14201f" if is_dark else "#fffaf3",
-        "panel_soft": "#1b2b29" if is_dark else "#f6ede2",
-        "panel_tint": "rgba(255,255,255,0.04)" if is_dark else "rgba(255,255,255,0.72)",
-        "line": "#2e4743" if is_dark else "#d8cdbd",
-        "line_strong": "#456660" if is_dark else "#bba992",
-        "accent": "#6fd0bd" if is_dark else "#0f6c5a",
-        "accent_warm": "#e9a270" if is_dark else "#ba7042",
-        "accent_soft": "#183735" if is_dark else "#e0f2ea",
-        "sidebar_bg": "#101918" if is_dark else "#18231f",
-        "sidebar_ink": "#f3f6f3" if is_dark else "#f7f2e9",
-        "tab_shell": "rgba(255,255,255,0.05)" if is_dark else "rgba(255,250,243,0.68)",
-        "tab_active": "rgba(111,208,189,0.16)" if is_dark else "rgba(15,108,90,0.10)",
-        "chip_bg": "rgba(255,255,255,0.08)" if is_dark else "rgba(255,255,255,0.82)",
-        "chip_ink": "#dff1eb" if is_dark else "#21453a",
-        "hero_side_bg": "linear-gradient(180deg, #13211f 0%, #0d1514 100%)" if is_dark else "linear-gradient(180deg, #1d2b27 0%, #13201c 100%)",
-        "hero_side_ink": "rgba(243, 239, 231, 0.82)",
-        "shadow": "0 18px 48px rgba(0, 0, 0, 0.34)" if is_dark else "0 18px 48px rgba(56, 41, 20, 0.10)",
-        "button_bg": "linear-gradient(135deg, #6fd0bd 0%, #4d83c3 100%)" if is_dark else "linear-gradient(135deg, #0f6c5a 0%, #165d8f 100%)",
-        "button_ink": "#0d1716" if is_dark else "#fbf6ef",
-        "chat_bg": "#1a2b29" if is_dark else "#fff8f0",
-        "audio_bg": "rgba(255,255,255,0.05)" if is_dark else "rgba(255,255,255,0.74)",
-        "hero_overlay": "rgba(111,208,189,0.14)" if is_dark else "rgba(15,108,90,0.12)",
-        "hero_overlay_warm": "rgba(233,162,112,0.14)" if is_dark else "rgba(186,112,66,0.12)",
+        "ink": "#e8eaed" if is_dark else "#202124",
+        "muted": "#9aa0a6" if is_dark else "#5f6368",
+        "app_bg": "#0f1115" if is_dark else "#f8fafd",
+        "panel": "#171a1f" if is_dark else "#ffffff",
+        "panel_soft": "#1d2128" if is_dark else "#eef3fd",
+        "panel_tint": "rgba(255,255,255,0.03)" if is_dark else "#ffffff",
+        "line": "#2f343b" if is_dark else "#e0e3e7",
+        "line_strong": "#8ab4f8" if is_dark else "#1a73e8",
+        "accent": "#8ab4f8" if is_dark else "#1a73e8",
+        "accent_soft": "#20242b" if is_dark else "#e8f0fe",
+        "sidebar_bg": "#15181e" if is_dark else "#ffffff",
+        "sidebar_ink": "#e8eaed" if is_dark else "#202124",
+        "tab_shell": "#1a1d23" if is_dark else "#eef3fd",
+        "tab_active": "#263244" if is_dark else "#d2e3fc",
+        "chip_bg": "#20242b" if is_dark else "#f1f3f4",
+        "chip_ink": "#e8eaed" if is_dark else "#3c4043",
+        "hero_side_bg": "#15181e" if is_dark else "#eef3fd",
+        "hero_side_ink": "#c6dafc" if is_dark else "#174ea6",
+        "shadow": "0 10px 24px rgba(0,0,0,0.22)" if is_dark else "0 1px 2px rgba(60,64,67,0.16), 0 2px 6px rgba(60,64,67,0.10)",
+        "button_bg": "#8ab4f8" if is_dark else "#1a73e8",
+        "button_ink": "#0f1115" if is_dark else "#ffffff",
+        "chat_bg": "#1a1e24" if is_dark else "#ffffff",
+        "audio_bg": "#181c22" if is_dark else "#ffffff",
+        "hero_overlay": "rgba(138,180,248,0.14)" if is_dark else "rgba(26,115,232,0.08)",
+        "hero_overlay_warm": "rgba(174,203,250,0.12)" if is_dark else "rgba(210,227,252,0.60)",
     }
 
     st.markdown(
@@ -157,7 +157,6 @@ def apply_theme(theme_mode: str) -> None:
             --line: {palette["line"]};
             --line-strong: {palette["line_strong"]};
             --accent: {palette["accent"]};
-            --accent-warm: {palette["accent_warm"]};
             --accent-soft: {palette["accent_soft"]};
             --sidebar-bg: {palette["sidebar_bg"]};
             --sidebar-ink: {palette["sidebar_ink"]};
@@ -177,26 +176,25 @@ def apply_theme(theme_mode: str) -> None:
         }}
 
         html, body, [class*="css"] {{
-            font-family: "Avenir Next", "Segoe UI", sans-serif;
+            font-family: "Google Sans", "Inter", "Segoe UI", sans-serif;
         }}
 
         .stApp {{
             background:
                 radial-gradient(circle at top left, var(--hero-overlay), transparent 24%),
-                radial-gradient(circle at top right, var(--hero-overlay-warm), transparent 22%),
-                linear-gradient(180deg, var(--app-bg) 0%, var(--panel-soft) 100%);
+                linear-gradient(180deg, var(--app-bg) 0%, var(--app-bg) 100%);
             color: var(--ink);
         }}
 
         .block-container {{
-            padding-top: 1.35rem;
+            padding-top: 1.15rem;
             padding-bottom: 3rem;
-            max-width: 1320px;
+            max-width: 1280px;
         }}
 
         [data-testid="stSidebar"] {{
             background: var(--sidebar-bg);
-            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            border-right: 1px solid var(--line);
         }}
 
         [data-testid="stSidebar"] * {{
@@ -204,32 +202,30 @@ def apply_theme(theme_mode: str) -> None:
         }}
 
         [data-testid="stSidebar"] .block-container {{
-            padding-top: 1.2rem;
+            padding-top: 1.15rem;
             padding-bottom: 2rem;
         }}
 
         .sidebar-shell {{
-            border-radius: 26px;
-            padding: 1.1rem 1rem;
+            border-radius: 24px;
+            padding: 1.15rem 1rem;
             margin-bottom: 1rem;
-            background:
-                radial-gradient(circle at top right, rgba(111, 208, 189, 0.22), transparent 32%),
-                linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-            border: 1px solid rgba(255, 255, 255, 0.09);
+            background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+            border: 1px solid var(--line);
         }}
 
         .sidebar-brand {{
-            font-family: Georgia, "Iowan Old Style", serif;
-            font-size: 1.85rem;
+            font-size: 1.65rem;
             line-height: 1;
             letter-spacing: -0.03em;
+            font-weight: 700;
             margin: 0 0 0.35rem 0;
         }}
 
         .sidebar-note {{
-            color: rgba(247, 242, 233, 0.78);
-            font-size: 0.92rem;
-            line-height: 1.55;
+            color: var(--muted);
+            font-size: 0.93rem;
+            line-height: 1.6;
             margin: 0 0 0.85rem 0;
         }}
 
@@ -242,17 +238,17 @@ def apply_theme(theme_mode: str) -> None:
         .sidebar-badge {{
             display: inline-flex;
             align-items: center;
-            padding: 0.35rem 0.6rem;
+            padding: 0.38rem 0.68rem;
             border-radius: 999px;
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.10);
+            background: var(--chip-bg);
+            border: 1px solid var(--line);
             font-size: 0.76rem;
-            font-weight: 700;
+            font-weight: 600;
         }}
 
         [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {{
-            background: rgba(255,255,255,0.04);
-            border: 1px dashed rgba(255,255,255,0.24);
+            background: var(--panel);
+            border: 1px dashed var(--line);
             border-radius: 20px;
             padding: 1rem 0.8rem;
         }}
@@ -260,66 +256,66 @@ def apply_theme(theme_mode: str) -> None:
         [data-testid="stVerticalBlockBorderWrapper"] {{
             background: linear-gradient(180deg, var(--panel-tint), var(--panel));
             border: 1px solid var(--line) !important;
-            border-radius: 24px;
+            border-radius: 28px;
             box-shadow: var(--shadow);
         }}
 
         [data-testid="stVerticalBlockBorderWrapper"] > div:first-child {{
-            border-radius: 24px;
+            border-radius: 28px;
         }}
 
         [data-testid="stMetric"] {{
-            background: var(--panel-soft);
+            background: var(--panel);
             border: 1px solid var(--line);
-            border-radius: 18px;
-            padding: 0.8rem 0.9rem;
+            border-radius: 20px;
+            padding: 0.8rem 0.95rem;
         }}
 
         [data-testid="stTabs"] [data-baseweb="tab-list"] {{
-            gap: 0.5rem;
+            gap: 0.45rem;
             background: var(--tab-shell);
-            border: 1px solid var(--line);
-            border-radius: 18px;
-            padding: 0.35rem;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            padding: 0.3rem;
         }}
 
         [data-testid="stTabs"] [data-baseweb="tab"] {{
             background: transparent;
             border: 1px solid transparent;
-            border-radius: 14px;
-            padding: 0.56rem 0.96rem;
+            border-radius: 999px;
+            padding: 0.56rem 1rem;
             color: var(--ink);
-            font-weight: 700;
+            font-weight: 600;
         }}
 
         [data-testid="stTabs"] [aria-selected="true"] {{
             background: var(--tab-active);
-            border-color: var(--line-strong);
             color: var(--ink);
         }}
 
         .stButton > button,
         [data-testid="stDownloadButton"] > button {{
-            border-radius: 16px;
-            border: 1px solid rgba(15,108,90,0.12);
+            border-radius: 999px;
+            border: 1px solid transparent;
             background: var(--button-bg);
             color: var(--button-ink);
-            box-shadow: 0 12px 24px rgba(15,108,90,0.18);
-            font-weight: 800;
-            min-height: 2.75rem;
+            box-shadow: none;
+            font-weight: 600;
+            min-height: 2.7rem;
         }}
 
         .stButton > button:hover,
         [data-testid="stDownloadButton"] > button:hover {{
-            border-color: var(--line-strong);
+            filter: brightness(0.98);
+            box-shadow: 0 1px 3px rgba(60,64,67,0.20);
         }}
 
         .stTextInput input,
         .stTextArea textarea,
         [data-baseweb="select"] > div {{
-            background: var(--panel-soft);
+            background: var(--panel);
             color: var(--ink);
-            border-radius: 18px;
+            border-radius: 16px;
             border: 1px solid var(--line);
         }}
 
@@ -329,12 +325,12 @@ def apply_theme(theme_mode: str) -> None:
 
         .hero-shell {{
             background:
-                radial-gradient(circle at top right, var(--hero-overlay), transparent 28%),
-                linear-gradient(135deg, var(--panel) 0%, var(--panel-soft) 100%);
+                radial-gradient(circle at top right, var(--hero-overlay-warm), transparent 38%),
+                linear-gradient(180deg, var(--panel) 0%, var(--panel) 100%);
             border: 1px solid var(--line);
             box-shadow: var(--shadow);
-            border-radius: 30px;
-            padding: 1.8rem 1.8rem 1.5rem 1.8rem;
+            border-radius: 32px;
+            padding: 2rem 2rem 1.65rem 2rem;
             margin-bottom: 1rem;
             position: relative;
             overflow: hidden;
@@ -343,29 +339,27 @@ def apply_theme(theme_mode: str) -> None:
         .hero-shell::after {{
             content: "";
             position: absolute;
-            inset: auto -40px -48px auto;
-            width: 220px;
-            height: 220px;
-            border-radius: 50%;
-            background: radial-gradient(circle, var(--hero-overlay-warm), transparent 62%);
+            inset: 0 auto auto 0;
+            width: 100%;
+            height: 4px;
+            background: var(--accent);
             pointer-events: none;
         }}
 
         .eyebrow {{
-            color: var(--accent-warm);
+            color: var(--accent);
             text-transform: uppercase;
             font-size: 0.76rem;
-            letter-spacing: 0.16em;
-            font-weight: 800;
+            letter-spacing: 0.14em;
+            font-weight: 700;
             margin-bottom: 0.5rem;
         }}
 
         .hero-title {{
             color: var(--ink);
-            font-family: Georgia, "Iowan Old Style", serif;
-            font-size: 3.3rem;
-            line-height: 0.96;
-            letter-spacing: -0.05em;
+            font-size: 3.35rem;
+            line-height: 0.98;
+            letter-spacing: -0.045em;
             font-weight: 700;
             margin: 0 0 0.65rem 0;
         }}
@@ -373,7 +367,7 @@ def apply_theme(theme_mode: str) -> None:
         .hero-copy {{
             color: var(--muted);
             font-size: 1rem;
-            max-width: 42rem;
+            max-width: 46rem;
             line-height: 1.7;
             margin: 0;
         }}
@@ -387,40 +381,40 @@ def apply_theme(theme_mode: str) -> None:
 
         .hero-step {{
             border-radius: 999px;
-            padding: 0.46rem 0.82rem;
+            padding: 0.46rem 0.84rem;
             background: var(--chip-bg);
             border: 1px solid var(--line);
             color: var(--chip-ink);
             font-size: 0.86rem;
-            font-weight: 700;
+            font-weight: 600;
         }}
 
         .hero-sidecard {{
             background: var(--hero-side-bg);
-            color: #f3efe7;
             border-radius: 28px;
-            padding: 1.3rem 1.2rem;
-            border: 1px solid rgba(255,255,255,0.08);
+            padding: 1.35rem 1.2rem;
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow);
             min-height: 100%;
         }}
 
         .hero-sidecard h4 {{
             margin: 0 0 0.6rem 0;
             font-size: 1rem;
-            font-weight: 800;
+            font-weight: 700;
         }}
 
         .hero-sidecard p {{
             margin: 0;
             font-size: 0.94rem;
             line-height: 1.62;
-            color: var(--hero-side-ink);
+            color: var(--muted);
         }}
 
         .hero-side-list {{
             margin: 0.95rem 0 0 0;
             padding-left: 1rem;
-            color: var(--hero-side-ink);
+            color: var(--muted);
         }}
 
         .hero-side-list li {{
@@ -435,33 +429,33 @@ def apply_theme(theme_mode: str) -> None:
         }}
 
         .hero-meter-card {{
-            border-radius: 18px;
-            padding: 0.9rem;
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 0.92rem;
+            background: var(--panel);
+            border: 1px solid var(--line);
         }}
 
         .hero-meter-label {{
             font-size: 0.72rem;
             text-transform: uppercase;
             letter-spacing: 0.12em;
-            color: rgba(243,239,231,0.56);
+            color: var(--muted);
             margin-bottom: 0.35rem;
-            font-weight: 800;
+            font-weight: 700;
         }}
 
         .hero-meter-value {{
             font-size: 1.55rem;
             line-height: 1;
-            font-weight: 800;
+            font-weight: 700;
         }}
 
         .kpi-card {{
-            background: linear-gradient(180deg, var(--panel), var(--panel-soft));
+            background: var(--panel);
             border: 1px solid var(--line);
-            border-radius: 22px;
+            border-radius: 24px;
             box-shadow: var(--shadow);
-            padding: 1rem 1.1rem;
+            padding: 1.05rem 1.15rem;
             min-height: 122px;
             position: relative;
             overflow: hidden;
@@ -472,8 +466,8 @@ def apply_theme(theme_mode: str) -> None:
             position: absolute;
             inset: 0 auto auto 0;
             width: 100%;
-            height: 4px;
-            background: linear-gradient(90deg, var(--accent), var(--accent-warm));
+            height: 3px;
+            background: var(--accent);
         }}
 
         .kpi-label {{
@@ -482,13 +476,12 @@ def apply_theme(theme_mode: str) -> None:
             text-transform: uppercase;
             letter-spacing: 0.12em;
             margin-bottom: 0.45rem;
-            font-weight: 800;
+            font-weight: 700;
         }}
 
         .kpi-value {{
             color: var(--ink);
-            font-family: Georgia, "Iowan Old Style", serif;
-            font-size: 2.2rem;
+            font-size: 2.15rem;
             line-height: 0.95;
             letter-spacing: -0.04em;
             font-weight: 700;
@@ -504,19 +497,18 @@ def apply_theme(theme_mode: str) -> None:
         }}
 
         .section-kicker {{
-            color: var(--accent-warm);
+            color: var(--accent);
             text-transform: uppercase;
             font-size: 0.76rem;
-            letter-spacing: 0.16em;
-            font-weight: 800;
+            letter-spacing: 0.14em;
+            font-weight: 700;
             margin-bottom: 0.26rem;
         }}
 
         .section-title {{
             color: var(--ink);
-            font-family: Georgia, "Iowan Old Style", serif;
-            font-size: 1.75rem;
-            line-height: 1;
+            font-size: 1.7rem;
+            line-height: 1.1;
             letter-spacing: -0.03em;
             font-weight: 700;
             margin-bottom: 0.42rem;
@@ -531,7 +523,7 @@ def apply_theme(theme_mode: str) -> None:
             background: var(--chip-bg);
             color: var(--chip-ink);
             font-size: 0.84rem;
-            font-weight: 700;
+            font-weight: 600;
         }}
 
         .insight-chip {{
@@ -550,10 +542,10 @@ def apply_theme(theme_mode: str) -> None:
         }}
 
         .file-card {{
-            background: linear-gradient(180deg, var(--panel), var(--panel-soft));
+            background: var(--panel);
             border: 1px solid var(--line);
-            border-radius: 22px;
-            padding: 1rem 1.05rem;
+            border-radius: 24px;
+            padding: 1rem 1.1rem;
             margin-bottom: 0.9rem;
             position: relative;
             overflow: hidden;
@@ -563,14 +555,14 @@ def apply_theme(theme_mode: str) -> None:
             content: "";
             position: absolute;
             inset: 0 auto 0 0;
-            width: 6px;
-            background: linear-gradient(180deg, var(--accent), var(--accent-warm));
+            width: 4px;
+            background: var(--accent);
         }}
 
         .file-card h4 {{
             margin: 0 0 0.3rem 0;
             font-size: 1.02rem;
-            font-weight: 800;
+            font-weight: 700;
             color: var(--ink);
         }}
 
@@ -587,31 +579,31 @@ def apply_theme(theme_mode: str) -> None:
         [data-testid="stChatMessage"] {{
             background: var(--chat-bg);
             border: 1px solid var(--line);
-            border-radius: 22px;
-            padding: 0.58rem 0.74rem;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.06);
+            border-radius: 24px;
+            padding: 0.62rem 0.78rem;
+            box-shadow: var(--shadow);
         }}
 
         [data-testid="stExpander"] {{
             border: 1px solid var(--line);
-            border-radius: 18px;
+            border-radius: 20px;
             overflow: hidden;
         }}
 
         [data-testid="stAudio"] {{
             background: var(--audio-bg);
             border: 1px solid var(--line);
-            border-radius: 18px;
+            border-radius: 20px;
             padding: 0.4rem 0.55rem;
         }}
 
         @media (max-width: 900px) {{
             .hero-title {{
-                font-size: 2.5rem;
+                font-size: 2.55rem;
             }}
 
             .hero-shell {{
-                padding: 1.45rem 1.25rem 1.2rem 1.25rem;
+                padding: 1.5rem 1.25rem 1.2rem 1.25rem;
             }}
 
             .section-title {{
@@ -903,6 +895,12 @@ def get_chat_engine() -> ChatEngine:
     return ChatEngine()
 
 
+@st.cache_resource(show_spinner=False)
+def get_document_analysis_engine() -> DocumentAnalysisEngine:
+    """Return a cached document analysis engine."""
+    return DocumentAnalysisEngine()
+
+
 def recent_conversation(limit: int = 6) -> list[dict[str, str]]:
     """Return the most recent chat turns for conversational continuity."""
     turns: list[dict[str, str]] = []
@@ -918,8 +916,8 @@ def chat_mode_note() -> tuple[str, str]:
     """Return the active chat mode label and supporting copy."""
     engine = get_chat_engine()
     if engine.is_remote_enabled:
-        return engine.mode_label, "Full conversational mode is active with grounded retrieval."
-    return engine.mode_label, "A real API-backed model is not configured yet, so answers use local grounded mode."
+        return engine.mode_label, "Local Ollama mode is active for grounded chat and document analysis."
+    return engine.mode_label, "Ollama is not reachable right now, so CloudInsight is using local grounded fallback mode."
 
 
 def audio_mime_type(path: Path) -> str:
@@ -1355,14 +1353,14 @@ def render_sentiment_panel(text: str) -> None:
 def render_sidebar() -> list[Any]:
     """Render the control sidebar."""
     badges = "".join(
-        f'<span class="sidebar-badge">{label}</span>' for label in ("Docs", "Tables", "Chat", "Audio")
+        f'<span class="sidebar-badge">{label}</span>' for label in ("Upload", "Analyze", "Ask", "Listen")
     )
     st.sidebar.markdown(
         f"""
         <div class="sidebar-shell">
             <div class="sidebar-brand">CloudInsight</div>
             <p class="sidebar-note">
-                A smaller local workspace for uploading files, checking what was extracted, and chatting against that evidence.
+                A calm local workspace for understanding documents with clean extraction, Ollama-backed analysis, and grounded answers.
             </p>
             <div class="sidebar-badges">{badges}</div>
         </div>
@@ -1383,7 +1381,8 @@ def render_sidebar() -> list[Any]:
     st.sidebar.markdown("### This V1 Does")
     st.sidebar.markdown("- Upload PDF, DOCX, PPTX, CSV, and XLSX files")
     st.sidebar.markdown("- Show extracted text, sections, tables, and warnings")
-    st.sidebar.markdown("- Answer questions with local Ollama chat")
+    st.sidebar.markdown("- Run local Ollama analysis across documents and datasets")
+    st.sidebar.markdown("- Answer questions against extracted evidence with Ollama")
     st.sidebar.markdown("- Read assistant answers aloud")
     st.sidebar.markdown("---")
     if st.sidebar.button("Clear Workspace", use_container_width=True):
@@ -1418,10 +1417,20 @@ def handle_uploads(uploaded_files: list[Any]) -> None:
         temp_path = save_uploaded_file(uploaded_file)
         result = route_file(temp_path)
         result["file_name"] = uploaded_file.name
+        result["analysis"] = get_document_analysis_engine().analyze_result(result)
         st.session_state.analyses.append(result)
         progress.progress(index / total, text=f"Processed {uploaded_file.name}")
 
     progress.empty()
+
+
+def ensure_ai_analyses(results: list[dict[str, Any]]) -> None:
+    """Backfill AI analysis for results created before this feature existed."""
+    engine = get_document_analysis_engine()
+    for result in results:
+        if result.get("analysis"):
+            continue
+        result["analysis"] = engine.analyze_result(result)
 
 
 def render_hero(results: list[dict[str, Any]]) -> None:
@@ -1433,16 +1442,16 @@ def render_hero(results: list[dict[str, Any]]) -> None:
         st.markdown(
             """
             <div class="hero-shell">
-                <div class="eyebrow">Document Intelligence Studio</div>
+                <div class="eyebrow">Local Document Intelligence</div>
                 <div class="hero-title">CloudInsight</div>
                 <p class="hero-copy">
-                    This rescue build focuses on one job: upload files, verify the extraction, then ask grounded questions against the evidence.
+                    Upload reports, decks, and datasets into one focused workspace. Review what was extracted, get Ollama-powered analysis, and ask grounded questions without leaving the page.
                 </p>
                 <div class="hero-steps">
-                    <span class="hero-step">Upload mixed files</span>
-                    <span class="hero-step">Inspect extraction</span>
+                    <span class="hero-step">Upload files</span>
+                    <span class="hero-step">Review extraction</span>
+                    <span class="hero-step">Analyze with Ollama</span>
                     <span class="hero-step">Ask grounded questions</span>
-                    <span class="hero-step">Listen to answers</span>
                 </div>
             </div>
             """,
@@ -1452,10 +1461,9 @@ def render_hero(results: list[dict[str, Any]]) -> None:
         st.markdown(
             f"""
             <div class="hero-sidecard">
-                <h4>Current Scope</h4>
+                <h4>Workspace snapshot</h4>
                 <p>
-                    {successful} file(s) are live in the workspace. This version intentionally trims the surface area
-                    so the files view and the chat view are the parts that have to work.
+                    {successful} file(s) are ready right now. The experience is designed to feel simple: one place to upload, inspect, summarize, and explore what matters.
                 </p>
                 <div class="hero-side-meter">
                     <div class="hero-meter-card">
@@ -1468,9 +1476,9 @@ def render_hero(results: list[dict[str, Any]]) -> None:
                     </div>
                 </div>
                 <ul class="hero-side-list">
-                    <li>Use <strong>Workspace</strong> to see what was loaded and any parser warnings.</li>
-                    <li>Use <strong>Files</strong> to inspect actual extracted text and table structure.</li>
-                    <li>Use <strong>Ask</strong> when you want evidence-backed answers only.</li>
+                    <li>Use <strong>Workspace</strong> to scan status, keywords, and coverage.</li>
+                    <li>Use <strong>Files</strong> to inspect extracted text, structure, and AI readouts.</li>
+                    <li>Use <strong>Ask</strong> when you want evidence-backed answers from Ollama.</li>
                 </ul>
             </div>
             """,
@@ -1503,7 +1511,7 @@ def render_overview_tab(results: list[dict[str, Any]]) -> None:
                 "Check which parser handled each file and whether anything important was missed.",
             )
             if not results:
-                st.info("Upload one or more files from the sidebar to start the rescue build workflow.")
+                st.info("Upload one or more files from the sidebar to start your document workspace.")
             else:
                 for result in results:
                     chips = "".join(f'<span class="mini-stat">{chip}</span>' for chip in result_stat_chips(result))
@@ -1541,9 +1549,9 @@ def render_overview_tab(results: list[dict[str, Any]]) -> None:
 
         with st.container(border=True):
             section_header(
-                "What This App Does Well",
-                "The parts worth trusting in this build",
-                "This smaller v1 is centered on extraction visibility, grounded chat, and local audio playback.",
+                "Built For Focus",
+                "What works especially well here",
+                "This workspace is optimized for clean extraction review, grounded local AI, and fast document understanding.",
             )
             st.markdown(
                 """
@@ -1551,7 +1559,7 @@ def render_overview_tab(results: list[dict[str, Any]]) -> None:
                     <li>PDFs show page-level extraction and warnings for empty pages.</li>
                     <li>DOCX and PPTX files surface paragraph and slide content for inspection.</li>
                     <li>CSV and XLSX files keep schema, preview rows, and sheet-level summaries.</li>
-                    <li>The Ask tab uses local Ollama chat with grounded evidence snippets.</li>
+                    <li>The Files and Ask tabs now use local Ollama-backed analysis and chat.</li>
                 </ul>
                 """,
                 unsafe_allow_html=True,
@@ -1595,6 +1603,49 @@ def render_intelligence_tab(results: list[dict[str, Any]]) -> None:
             )
             st.markdown(f"**Pipeline:** {routing_label(result.get('file_type', 'unknown'))}")
             st.json(result.get("metadata", {}))
+
+    analysis = result.get("analysis", {})
+    if analysis:
+        with st.container(border=True):
+            section_header(
+                "AI Analysis",
+                "Document readout",
+                "This readout uses local Ollama first and falls back to built-in grounded analysis only when Ollama is unavailable.",
+            )
+            analysis_left, analysis_right = st.columns((1.2, 0.8), gap="large")
+            mode_detection = analysis.get("mode_detection", {})
+            confidence = mode_detection.get("confidence")
+
+            with analysis_left:
+                st.markdown(f"**Backend:** {analysis.get('backend', 'Unavailable')}")
+                if mode_detection:
+                    confidence_label = f" ({confidence:.0%} confidence)" if isinstance(confidence, (int, float)) else ""
+                    st.markdown(
+                        f"**Detected document mode:** {mode_detection.get('display_name', 'Unknown')}{confidence_label}"
+                    )
+                st.write(analysis.get("summary", "No AI summary is available for this file yet."))
+                if analysis.get("insights"):
+                    st.markdown("**Key insights**")
+                    for item in analysis["insights"]:
+                        st.markdown(f"- {item}")
+                if analysis.get("warning"):
+                    st.caption(analysis["warning"])
+
+            with analysis_right:
+                if analysis.get("recommended_questions"):
+                    st.markdown("**Suggested follow-up questions**")
+                    for question in analysis["recommended_questions"]:
+                        st.markdown(f"- {question}")
+                signals = mode_detection.get("matched_signals", [])
+                if signals:
+                    st.markdown("**Detection signals**")
+                    render_badges(signals[:4], css_class="insight-chip")
+
+            if analysis.get("evidence"):
+                with st.expander("Evidence used for AI analysis", expanded=False):
+                    for item in analysis["evidence"][:4]:
+                        st.markdown(f"**{item.get('section_id', 'section')}**")
+                        st.write(item.get("text", ""))
 
     bottom_left, bottom_right = st.columns((1.2, 0.9), gap="large")
     with bottom_left:
@@ -1929,6 +1980,7 @@ def main() -> None:
     handle_uploads(uploaded_files or [])
 
     results = st.session_state.analyses
+    ensure_ai_analyses(results)
     render_hero(results)
 
     workspace_tab, files_tab, chat_tab = st.tabs(["Workspace", "Files", "Ask"])
