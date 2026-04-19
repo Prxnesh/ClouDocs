@@ -1,0 +1,73 @@
+flowchart LR
+    user["User"]
+    browser["Browser UI"]
+    app["Streamlit App\napp/streamlit_app.py"]
+    state["Session State\nanalyses, chat_messages,\nchat_scope, editor_text, audio"]
+
+    subgraph ingestion["Ingestion Layer"]
+        router["File Router\nroute_file()"]
+        pdf["PDFExtractor"]
+        docx["DOCXExtractor"]
+        pptx["PPTXExtractor"]
+        csv["CSVLoader"]
+        xlsx["XLSXLoader"]
+        common["Ingestion Common\nnormalization, metadata,\nsection and table payloads"]
+    end
+
+    subgraph ai["AI and Analysis Layer"]
+        mode["DocumentModeDetector"]
+        analysis["DocumentAnalysisEngine"]
+        chat["ChatEngine"]
+        ollama["Ollama Server\n127.0.0.1:11434"]
+        local["Local Grounded Fallback\nExtractiveSummarizer + rule-based response"]
+        sentiment["Sentiment Analyzer"]
+    end
+
+    subgraph data["Analytics and Visualization"]
+        retrieval["Section Retrieval\nkeyword and summary-aware matching"]
+        charts["Visualization Tab\npandas profiling,\ncharts, correlations"]
+    end
+
+    subgraph media["Output Services"]
+        tts["TTSEngine"]
+    end
+
+    user --> browser --> app
+    app <--> state
+
+    app --> router
+    router --> pdf
+    router --> docx
+    router --> pptx
+    router --> csv
+    router --> xlsx
+
+    pdf --> common
+    docx --> common
+    pptx --> common
+    csv --> common
+    xlsx --> common
+
+    common --> state
+
+    state --> analysis
+    state --> chat
+    state --> charts
+    app --> retrieval
+    retrieval --> chat
+
+    analysis --> mode
+    analysis --> ollama
+    analysis --> local
+
+    chat --> ollama
+    chat --> local
+
+    app --> sentiment
+    app --> tts
+
+    chat --> state
+    analysis --> state
+    charts --> browser
+    tts --> browser
+    state --> browser
